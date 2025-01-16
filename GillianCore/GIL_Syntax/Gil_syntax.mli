@@ -190,6 +190,9 @@ module BVOps : sig
     | BVUrem
     | BVShl
     | BVLShr
+    | BVXor
+    | BVSrem
+    | BVSub
   [@@deriving yojson, eq]
 
   (** Printer *)
