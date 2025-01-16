@@ -193,6 +193,11 @@ module BVOps : sig
     | BVXor
     | BVSrem
     | BVSub
+    | BVSignExtend
+    | BVZeroExtend
+    | BVSdiv
+    | BVSmod
+    | BVAshr
   [@@deriving yojson, eq]
 
   (** Printer *)

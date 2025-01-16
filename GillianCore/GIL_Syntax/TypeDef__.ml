@@ -158,6 +158,11 @@ and bvop =
   | BVXor
   | BVSrem
   | BVSub
+  | BVSignExtend
+  | BVZeroExtend
+  | BVSdiv
+  | BVSmod
+  | BVAshr
 
 and bv_arg = Literal of int | BvExpr of (expr * int)
 
