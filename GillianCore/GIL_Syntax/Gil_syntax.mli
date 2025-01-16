@@ -203,6 +203,9 @@ end
 module BVPred : sig
   type t = TypeDef__.bvpred =
     | BVUlt
+    | BVUleq
+    | BVSlt
+    | BVSleq
     | BVUMulO
     | BVSMulO
     | BVNegO
