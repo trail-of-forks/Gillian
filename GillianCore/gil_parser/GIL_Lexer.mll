@@ -22,6 +22,7 @@
         "List",      GIL_Parser.LISTTYPELIT;
         "Type",      GIL_Parser.TYPETYPELIT;
         "Set",       GIL_Parser.SETTYPELIT;
+        "Bitvector", GIL_Parser.BVTYPELIT;
 
         (* Literals *)
         "undefined", GIL_Parser.UNDEFINED;
@@ -171,6 +172,36 @@ rule read = parse
   | "{{"                 { GIL_Parser.LSTOPEN   }
   | "}}"                 { GIL_Parser.LSTCLOSE  }
 
+  (* Bv intrinsics *)
+  | "concat" { GIL_Parser.BVCONCAT }
+  | "extract" { GIL_Parser.BVEXTRACT }
+  | "bvnot" { GIL_Parser.BVNOT }
+  | "bvand" { GIL_Parser.BVAND }
+  | "bvor" { GIL_Parser.BVOR }
+  | "bvneg" { GIL_Parser.BVNEG }
+  | "bvadd" { GIL_Parser.BVADD }
+  | "bvmul" { GIL_Parser.BVMUL }
+  | "bvudiv" { GIL_Parser.BVUDIV }
+  | "bvurem" { GIL_Parser.BVUREM }
+  | "bvnego" { GIL_Parser.BVNEGO }
+  | "bvuaddo" { GIL_Parser.BVUADDO }
+  | "bvsaddo" { GIL_Parser.BVSADDO }
+  | "bvumulo" { GIL_Parser.BVUMULO }
+  | "bvsmulo" { GIL_Parser.BVSMULO }
+  | "bvshl" { GIL_Parser.BVSHL }
+  | "bvlshr" { GIL_Parser.BVLSHR }
+  | "bvxor" {GIL_Parser.BVXOR }
+  | "bvsrem" { GIL_Parser.BVSREM }
+  | "bvsub" { GIL_Parser.BVSUB }
+  | "bvult" { GIL_Parser.BVULT }
+  | "bvuleq" { GIL_Parser.BVULEQ }
+  | "bvslt" { GIL_Parser.BVSLT }
+  | "bvsleq" { GIL_Parser.BVSLEQ }
+  | "bvsext" { GIL_Parser.BVSIGNEXTEND }
+  | "bvzext" { GIL_Parser.BVZEROEXTEND }
+  | "bvsdiv" { GIL_Parser.BVSDIV }
+  | "bvsmod" { GIL_Parser.BVSMOD }
+  | "bvashr" { GIL_Parser.BVASHR }
 (* Constants *)
   | "$$min_float"        { GIL_Parser.MIN_FLOAT     }
   | "$$max_float"        { GIL_Parser.MAX_FLOAT     }
