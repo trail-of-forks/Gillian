@@ -857,11 +857,11 @@ struct
                       | Error x -> Right (Exec_err.EState x))
                     ret
                 in
-                let b_counter, has_branched =
-                  match successes with
-                  | [] -> (b_counter, false)
-                  | _ -> (b_counter + 1, true)
+
+                let b_counter =
+                  Int.max 0 (List.length successes - 1) + b_counter
                 in
+                let has_branched = List.length successes > 1 in
                 let spec_name = spec.data.spec_name in
                 let success_confs =
                   successes
@@ -2053,6 +2053,12 @@ struct
                      if Hashtbl.mem prog.specs pid then Some conf else None)
                    on_hold
                in
+               let () =
+                 L.(
+                   verbose (fun m ->
+                       m "Resuming size of: %d total size of: %d"
+                         (List.length hold_confs) (List.length on_hold)))
+               in
                continue_or_pause hold_confs (fun ?selector () ->
                    eval_step ret_fun false prog results [] hold_confs selector
                      []))
@@ -2226,7 +2232,9 @@ struct
             }
           in
           debug_log conf rest_confs;
-
+          L.(
+            verbose (fun m ->
+                m "Evaluating a conf with holds %d" (List.length on_hold)));
           match conf with
           | None -> Handle_conf.none eval_step_state
           | Some (ConfCont ({ branch_count; _ } as c))
