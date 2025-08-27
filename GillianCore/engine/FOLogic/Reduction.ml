@@ -886,8 +886,6 @@ and reduce_lexpr_loop
               Base cases
        ------------------------- *)
     | Lit _ | PVar _ | ALoc _ -> le
-    | BVExprIntrinsic (op, es, width) ->
-        BVExprIntrinsic (op, Expr.map_bv_arg_exprs f es, width)
     (* -------------------------
                  LVar
        ------------------------- *)
@@ -2206,6 +2204,30 @@ and reduce_lexpr_loop
               | Some x -> Lit (Bool x)
               | None -> def)
         | _ -> def)
+    | BVExprIntrinsic (op, args, width) as e -> (
+        (*
+    | BVExprIntrinsic (op, es, width) ->
+        BVExprIntrinsic (op, Expr.map_bv_arg_exprs f es, width) *)
+        let args = Expr.map_bv_arg_exprs f args
+        and reduced =
+          try
+            let lit = CExprEval.evaluate_bvop (CStore.init []) op args width in
+            Some (Expr.Lit lit)
+          with
+          | CExprEval.TypeError err_msg ->
+              Logging.tmi (fun m ->
+                  m "Failed to reduce BVOp: TypeError: %s" err_msg);
+              None
+          | CExprEval.EvaluationError err_msg ->
+              Logging.tmi (fun m ->
+                  m "Failed to reduce BVOp: EvaluationError: %s" err_msg);
+              None
+          | e -> raise e
+        in
+        Logging.tmi (fun m -> m "Reduce BVExprIntrinsic: %a" Expr.pp e);
+        match reduced with
+        | None -> BVExprIntrinsic (op, args, width)
+        | Some x -> x)
   in
   let result = normalise_list_expressions result in
   if Expr.equal le result then result
