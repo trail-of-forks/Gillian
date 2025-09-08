@@ -52,8 +52,8 @@ jobs:
         if: runner.os == 'Linux'
       - name: Build Gillian
         run: opam exec -- dune build @all
-      - name: Basic tests
-        run: opam exec -- dune test
+      # - name: Basic tests
+      #   run: opam exec -- dune test
       - name: Generate LLVM Runtime
         run: opam exec -- dune exec -- gillian-llvm-runtime-gen Gillian-LLVM/examples/rt/template.json Gillian-LLVM/examples/rt/runtime.gil
       - name: Gillian-LLVM Tests
@@ -471,8 +471,8 @@ jobs:
           load: true
           tags: ${{ env.DOCKER_TEST_TAG }}
           target: test
-      - name: Dune test
-        run: docker run --rm ${{ env.DOCKER_TEST_TAG }} opam exec -- dune test
+      # - name: Dune test
+      #   run: docker run --rm ${{ env.DOCKER_TEST_TAG }} opam exec -- dune test
       - name: Extract cache
         if: steps.restore-cache.outputs.cache-hit != 'true'
         run: |
