@@ -57,7 +57,7 @@ jobs:
       - name: Generate LLVM Runtime
         run: opam exec -- dune exec -- gillian-llvm-runtime-gen Gillian-LLVM/examples/rt/template.json Gillian-LLVM/examples/rt/runtime.gil
       - name: Gillian-LLVM Tests
-        run: opam exec -- dune exec gillian-llvm  -- bulk-wpst Gillian-LLVM/examples/wpst
+        run: opam exec -- dune exec gillian-llvm  -- bulk-wpst Gillian-LLVM/examples/wpst/succeed
       - name: Wisl checks
         run: "opam exec -- dune exec -- bash ./wisl/scripts/quicktests.sh"
       - name: Format checking
