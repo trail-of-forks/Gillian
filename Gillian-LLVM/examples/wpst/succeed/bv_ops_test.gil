@@ -46,12 +46,12 @@ proc main() {
   assert((r_5 == v_1));
 
   (* Test trunc *)
-  (* r_6 := "bvtrunc_64_32"(v_5);
+  r_6 := "bvtrunc_64_32"(v_5);
   assert((r_6 == v_6));
-  r_7 := "bvtrunc_8_2"(v_7);
+  r_7 := "bvtrunc_8_1"(v_7);
   assert((r_7 == v_t));
-  r_8 := "bvtrunc_8_2"(v_8);
-  assert((r_8 == v_f)); *)
+  r_8 := "bvtrunc_8_1"(v_8);
+  assert((r_8 == v_f));
 
   (* Test select *)
   r_9 := "select_1_32_32_32"(v_t, v_1, v_9);
@@ -80,10 +80,10 @@ proc main() {
   assert((r_18 == v_1));
 
   (* Test mul *)
-  (* r_19 := "bvmul_32_32_32"(v_1, v_9);
+  r_19 := "bvmul_32_32_32"(v_1, v_9);
   assert((r_19 == v_14));
   r_20 := "bvmul_32_32_32"(v_9, v_1);
-  assert((r_20 == v_14)); *)
+  assert((r_20 == v_14));
 
   (* Test and *)
   r_21 := "bvand_32_32_32"(v_10, v_13);
@@ -108,30 +108,30 @@ proc main() {
   assert((r_28 == v_16));
 
   (* Test shl *)
-  (* r_29 := "bvshl_32_32_32"(v_10, v_16);
+  r_29 := "bvshl_32_32_32"(v_10, v_16);
   assert((r_29 == v_17));
   r_30 := "bvshl_32_32_32"(v_2, v_10);
-  assert((r_30 == v_11)); *)
+  assert((r_30 == v_11));
 
   (* Test lshr *)
-  (* r_31 := "bvlshr_32_32_32"(v_1, v_18);
+  r_31 := "bvlshr_32_32_32"(v_1, v_18);
   assert((r_31 == v_10));
   r_32 := "bvlshr_32_32_32"(v_2, v_10);
-  assert((r_32 == v_19)); *)
+  assert((r_32 == v_19));
 
   (* Test sdiv *)
-  (* r_33 := "bvsdiv_32_32_32"(v_9, v_16);
+  r_33 := "bvsdiv_32_32_32"(v_9, v_16);
   assert((r_33 == v_18));
   r_34 := "bvsdiv_32_32_32"(v_20, v_16);
-  assert((r_34 == v_21)); *)
+  assert((r_34 == v_21));
 
   (* Test srem *)
-  (* r_35 := "bvsrem_32_32_32"(v_9, v_16);
+  r_35 := "bvsrem_32_32_32"(v_9, v_16);
   assert((r_35 == v_11));
   r_36 := "bvsrem_32_32_32"(v_15, v_16);
   assert((r_36 == v_10));
   r_37 := "bvsrem_32_32_32"(v_26, v_16);
-  assert((r_37 == v_21)); *)
+  assert((r_37 == v_21));
 
   (* Test add *)
   r_38 := "bvadd_32_32_32"(v_16, v_18);
@@ -154,16 +154,16 @@ proc main() {
   assert((r_45 == v_23));
 
   (* Test zext *)
-  (* r_46 := "bvzext_32_64"(v_1);
+  r_46 := "bvzext_32_64"(v_1);
   assert((r_46 == v_3));
   r_47 := "bvzext_32_64"(v_2);
-  assert((r_47 == v_24)); *)
+  assert((r_47 == v_24));
 
   (* Test sext *)
-  (* r_48 := "bvsext_32_64"(v_1);
+  r_48 := "bvsext_32_64"(v_1);
   assert((r_48 == v_3));
   r_49 := "bvsext_32_64"(v_2);
-  assert((r_49 == v_25)); *)
+  assert((r_49 == v_25));
 
   ret := {{}};
   return
