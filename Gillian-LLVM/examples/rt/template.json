@@ -343,6 +343,40 @@
             ]
         },
         {
+            "name": "fpadd",
+            "output_name": "fpadd_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [
+                            32,
+                            32
+                        ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpadd",
+            "output_name": "fpadd_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [
+                            64,
+                            64
+                        ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
             "name": "fpsub",
             "output_name": "fpsub_32_32_32",
             "spec": [
@@ -454,6 +488,62 @@
                     "shape": {
                         "args": [32],
                         "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpneg",
+            "output_name": "fpneg_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpneg",
+            "output_name": "fpneg_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpmuladd",
+            "output_name": "fpmuladd_32_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32, 32],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpmuladd",
+            "output_name": "fpmuladd_64_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64, 64, 64],
+                        "width_of_result": 64
                     }
                 }
             ]
@@ -897,6 +987,20 @@
         {
             "name": "bvlshr",
             "output_name": "bvlshr_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvashr",
+            "output_name": "bvashr_32_32_32",
             "spec": [
                 "ValueSpec",
                 {

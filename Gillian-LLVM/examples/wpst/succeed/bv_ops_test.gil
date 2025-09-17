@@ -165,6 +165,12 @@ proc main() {
   r_49 := "bvsext_32_64"(v_2);
   assert((r_49 == v_25));
 
+  (* Test ashr *)
+  r_50 := "bvashr_32_32_32"(v_1, v_18);
+  assert((r_50 == v_10));
+  r_51 := "bvashr_32_32_32"(v_20, v_10);
+  assert((r_51 == v_22));
+
   ret := {{}};
   return
 };
