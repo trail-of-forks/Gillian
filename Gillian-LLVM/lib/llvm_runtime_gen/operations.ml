@@ -1196,6 +1196,9 @@ module MemoryLib = struct
   let alloc_name = "alloc"
   let store_name = "store"
   let load_name = "load"
+  let memset_name = "memset"
+  let memcpy_name = "memcpy"
+  let memmove_name = "memmove"
 
   module M = Memories.LLVM_ALoc.MonadicSMemory
 
@@ -1348,6 +1351,137 @@ module MemoryLib = struct
         return ()
     | _ -> failwith "Invalid number of arguments"
 
+  let memset_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Expr.Infix in
+    match exp_list with
+    | [ ptr; value; size ] ->
+        let type_checks =
+          [
+            is_type_of_expr ptr LLVMRuntimeTypes.Ptr;
+            is_type_of_expr value (LLVMRuntimeTypes.Int 8);
+            is_type_of_expr size (LLVMRuntimeTypes.Int pointer_width);
+          ]
+        in
+        let ty_check =
+          List.fold_left (fun acc check -> acc && check) Expr.true_ type_checks
+        in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base; offset } = access_ptr ptr in
+               let byte_value = Expr.list_nth value 1 in
+               let byte_count = Expr.list_nth size 1 in
+               pointer_op
+                 ~is_ptr_case:(fun bindr ->
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          (bindr, memset_name, [ base; offset; byte_value; byte_count ]))
+                   in
+                   return ())
+                 ptr)
+            ~false_case:
+              (let* _ =
+                 add_cmd (fail_cmd "Memset_type_error" [ ptr; value; size ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments"
+
+  let memcpy_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Expr.Infix in
+    match exp_list with
+    | [ dst; src; len ] ->
+        let type_checks =
+          [
+            is_type_of_expr dst LLVMRuntimeTypes.Ptr;
+            is_type_of_expr src LLVMRuntimeTypes.Ptr;
+            is_type_of_expr len (LLVMRuntimeTypes.Int pointer_width);
+          ]
+        in
+        let ty_check =
+          List.fold_left (fun acc check -> acc && check) Expr.true_ type_checks
+        in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base = dst_base; offset = dst_offset } = access_ptr dst in
+               let { base = src_base; offset = src_offset } = access_ptr src in
+               let byte_count = Expr.list_nth len 1 in
+               pointer_op
+                 ~is_ptr_case:(fun bindr ->
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          (bindr, memcpy_name, [ dst_base; dst_offset; src_base; src_offset; byte_count ]))
+                   in
+                   return ())
+                 dst)
+            ~false_case:
+              (let* _ =
+                 add_cmd (fail_cmd "Memcpy_type_error" [ dst; src; len ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments"
+
+  let memmove_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Expr.Infix in
+    match exp_list with
+    | [ dst; src; len ] ->
+        let type_checks =
+          [
+            is_type_of_expr dst LLVMRuntimeTypes.Ptr;
+            is_type_of_expr src LLVMRuntimeTypes.Ptr;
+            is_type_of_expr len (LLVMRuntimeTypes.Int pointer_width);
+          ]
+        in
+        let ty_check =
+          List.fold_left (fun acc check -> acc && check) Expr.true_ type_checks
+        in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base = dst_base; offset = dst_offset } = access_ptr dst in
+               let { base = src_base; offset = src_offset } = access_ptr src in
+               let byte_count = Expr.list_nth len 1 in
+               pointer_op
+                 ~is_ptr_case:(fun bindr ->
+                   let temp_buf_sym = fresh_sym () in
+                   let* _ = 
+                     add_cmd (Cmd.LAction (temp_buf_sym, alloc_name, [ Expr.zero_bv pointer_width; byte_count ]))
+                   in
+                   let temp_buf = Expr.PVar temp_buf_sym in
+                   let { base = temp_base; offset = temp_offset } = access_ptr temp_buf in
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          (bindr, memcpy_name, [ temp_base; temp_offset; src_base; src_offset; byte_count ]))
+                   in
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          (bindr, memcpy_name, [ dst_base; dst_offset; temp_base; temp_offset; byte_count ]))
+                   in
+                   return ())
+                 dst)
+            ~false_case:
+              (let* _ =
+                 add_cmd (fail_cmd "Memmove_type_error" [ dst; src; len ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments"
+
   let construct_simple_op
       ~(arity : int)
       ~(f : pointer_width:int -> Expr.t list -> unit Codegenerator.t)
@@ -1374,6 +1508,18 @@ module MemoryLib = struct
         name = "llvm_alloca";
         generator = SimpleOp (construct_simple_op ~arity:2 ~f:alloc_op);
       };
+      {
+        name = "llvm_memset";
+        generator = SimpleOp (construct_simple_op ~arity:3 ~f:memset_op);
+      };
+      {
+        name = "llvm_memcpy";
+        generator = SimpleOp (construct_simple_op ~arity:3 ~f:memcpy_op);
+      };
+      {
+        name = "llvm_memmove";
+        generator = SimpleOp (construct_simple_op ~arity:3 ~f:memmove_op);
+      };
     ]
 end
 
@@ -1386,6 +1532,9 @@ module Libc = struct
   let libc_prefix = "libc_"
   let libc_mul_name = libc_prefix ^ "bvmul_sizet"
   let libc_alloca_name = libc_prefix ^ "_llvm_alloca"
+  let libc_memset_name = "llvm_memset"
+  let libc_memcpy_name = "llvm_memcpy"
+  let libc_memmove_name = "llvm_memmove"
 
   let libc_dependencies ~(pointer_width : int) =
     [
@@ -1412,6 +1561,9 @@ module Libc = struct
       { name = "calloc"; output_name = "calloc"; spec = SimpleSpec };
       { name = "exit"; output_name = "exit"; spec = SimpleSpec };
       { name = "getchar"; output_name = "getchar"; spec = SimpleSpec };
+      { name = "llvm_memset"; output_name = libc_memset_name; spec = SimpleSpec };
+      { name = "llvm_memcpy"; output_name = libc_memcpy_name; spec = SimpleSpec };
+      { name = "llvm_memmove"; output_name = libc_memmove_name; spec = SimpleSpec };
     ]
 
   let constant_return_func

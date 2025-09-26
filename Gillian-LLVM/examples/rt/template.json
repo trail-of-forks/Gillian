@@ -309,6 +309,27 @@
             ]
         },
         {
+            "name": "llvm_memset",
+            "output_name": "llvm_memset",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
+            "name": "llvm_memcpy",
+            "output_name": "llvm_memcpy",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
+            "name": "llvm_memmove",
+            "output_name": "llvm_memmove",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
             "name": "bvadd",
             "output_name": "bvadd_64_64_64",
             "spec": [

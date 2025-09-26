@@ -1455,6 +1455,66 @@ let zero_init t ofs size =
         DR.of_result (with_root t root)
   else DR.error BufferOverrun
 
+let memset t ptr value size =
+  let open DR.Syntax in
+  let open Delayed.Syntax in
+  let range = Range.of_low_and_size ptr size in
+  let** span = DR.of_result (get_bounds t) in
+  if%sat is_in_bounds range span then
+    let** root = DR.of_result (get_root t) in
+    match root with
+    | None -> DR.error (MissingResource Unfixable)
+    | Some root ->
+        let chunk = Chunk.i8 in
+        let value_sval = SVal.make ~chunk ~value in
+        let ptr_width = Llvmconfig.ptr_width () in
+        let zero_bv = Expr.zero_bv ptr_width in
+        let one_byte = Expr.bv_z Z.one ptr_width in
+        
+        let rec store_loop current_tree current_ofs remaining_size =
+          let open Expr.Infix in
+          if%sat remaining_size == zero_bv then DR.ok current_tree
+          else
+            let** new_tree = store current_tree chunk current_ofs value_sval in
+            let next_ofs = Expr.bv_plus current_ofs one_byte in
+            let next_size = Expr.bv_sub remaining_size one_byte in
+            store_loop new_tree next_ofs next_size
+        in
+        
+        store_loop t ptr size
+  else DR.error BufferOverrun
+
+let memcpy t dst src len =
+  let open DR.Syntax in
+  let open Delayed.Syntax in
+  let dst_range = Range.of_low_and_size dst len in
+  let src_range = Range.of_low_and_size src len in
+  let** span = DR.of_result (get_bounds t) in
+  if%sat (Expr.Infix.(is_in_bounds dst_range span && is_in_bounds src_range span)) then
+    let** root = DR.of_result (get_root t) in
+    match root with
+    | None -> DR.error (MissingResource Unfixable)
+    | Some root ->
+        let chunk = Chunk.i8 in
+        let ptr_width = Llvmconfig.ptr_width () in
+        let zero_bv = Expr.zero_bv ptr_width in
+        let one_byte = Expr.bv_z Z.one ptr_width in
+        
+        let rec store_loop current_tree dst_ofs src_ofs remaining_size =
+          let open Expr.Infix in
+          if%sat remaining_size == zero_bv then DR.ok current_tree
+          else
+            let** current_val, _ = load current_tree chunk src_ofs in
+            let** new_tree = store current_tree chunk dst_ofs current_val in
+            let next_dst_ofs = Expr.bv_plus dst_ofs one_byte in
+            let next_src_ofs = Expr.bv_plus src_ofs one_byte in
+            let next_size = Expr.bv_sub remaining_size one_byte in
+            store_loop new_tree next_dst_ofs next_src_ofs next_size
+        in
+        
+        store_loop t dst src len
+  else DR.error BufferOverrun
+
 let poison t ofs size =
   let open DR.Syntax in
   let range = Range.of_low_and_size ofs size in
