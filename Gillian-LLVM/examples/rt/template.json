@@ -1116,6 +1116,34 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "extractvalue",
+            "output_name": "extractvalue_64_64_8",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 8
+                    }
+                }
+            ]
+        },
+        {
+            "name": "extractvalue",
+            "output_name": "extractvalue_64_64_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
         }
     ]
 }

@@ -1095,6 +1095,30 @@ module OpFunctions = struct
   let fp_div_function = fp_op_pred BinOp.FDiv
   let fp_abs_function = fp_unop_pred UnOp.M_abs
   let fp_neg_function = fp_unop_pred UnOp.FUnaryMinus
+
+  let extract_value_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        (* Use shift and extract since extract requires a literal index *)
+        let res_width = shape.width_of_result |> Option.get in
+        let x_width = List.hd shape.args in
+        let y_width = List.nth shape.args 1 in
+
+        (* Shift amount = x_width - (y + res_width) *)
+        let res_width_bv = Expr.Lit (Literal.LBitvector (Z.of_int res_width, y_width)) in
+        let last_index = bv_op_function BVOps.BVPlus [y; res_width_bv] { shape with args = [y_width; y_width] } in
+        let x_width_bv = Expr.Lit (Literal.LBitvector (Z.of_int x_width, x_width)) in
+        let shift_amount = bv_op_function BVOps.BVSub [x_width_bv; last_index] { shape with args = [x_width; y_width] } in
+        let shifted = bv_op_function BVOps.BVLShr [x; shift_amount] { shape with args = [x_width; y_width] } in
+
+        let high_index = res_width - 1 in
+        let lits = Some [ high_index; 0 ] in
+        let result = bv_op_function ?literals:lits BVOps.BVExtract [shifted] { shape with args = [x_width] } in
+        return result
+    | _ -> failwith "Invalid number of arguments"
+  
 end
 
 let template_from_pattern_unary
@@ -1956,6 +1980,15 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
             (flag_template_function
                (UtilityOps.generic_template_function
                   ~op:UtilityOps.select_op_function)
+               []);
+      };
+      {
+        name = "extractvalue";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function 
+                  ~op:OpFunctions.extract_value_function)
                []);
       };
       {
