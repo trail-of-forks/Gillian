@@ -97,6 +97,26 @@ proc main() {
   r_27 := "fpmuladd_64_64_64_64"(d_6, d_5, d_9);
   assert((r_27 == d_12));
 
+  (* Test floor *)
+  r_28 := "fpfloor_32_32"(f_10);
+  assert((r_28 == f_9));
+  r_29 := "fpfloor_32_32"(f_3);
+  assert((r_29 == f_6));
+  r_30 := "fpfloor_64_64"(d_10);
+  assert((r_30 == d_9));
+  r_31 := "fpfloor_64_64"(d_3);
+  assert((r_31 == d_6));
+
+  (* Test ceil *)
+  r_32 := "fpceil_32_32"(f_10);
+  assert((r_32 == f_6));
+  r_33 := "fpceil_32_32"(f_3);
+  assert((r_33 == f_11));
+  r_34 := "fpceil_64_64"(d_10);
+  assert((r_34 == d_6));
+  r_35 := "fpceil_64_64"(d_3);
+  assert((r_35 == d_11));
+
   ret := {{}};
   return
 };

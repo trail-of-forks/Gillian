@@ -176,7 +176,7 @@ rule read = parse
   | "}}"                 { GIL_Parser.LSTCLOSE  }
 
   (* Bv intrinsics *)
-  | "concat" { GIL_Parser.BVCONCAT }
+  | "bvconcat" { GIL_Parser.BVCONCAT }
   | "bvextract" { GIL_Parser.BVEXTRACT }
   | "bvnot" { GIL_Parser.BVNOT }
   | "bvand" { GIL_Parser.BVAND }
