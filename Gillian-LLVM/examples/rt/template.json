@@ -1144,6 +1144,202 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "bvumax",
+            "output_name": "bvumax_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvumax",
+            "output_name": "bvumax_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvsmin",
+            "output_name": "bvsmin_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvsmax",
+            "output_name": "bvsmax_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpfloor",
+            "output_name": "fpfloor_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpfloor",
+            "output_name": "fpfloor_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpceil",
+            "output_name": "fpceil_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpceil",
+            "output_name": "fpceil_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "uaddsat",
+            "output_name": "uaddsat_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "ctpop",
+            "output_name": "ctpop_8_8",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 8 ],
+                        "width_of_result": 8
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvfshl",
+            "output_name": "bvfshl_32_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvfshr",
+            "output_name": "bvfshr_32_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bswap",
+            "output_name": "bswap_16_16",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 16 ],
+                        "width_of_result": 16
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bswap",
+            "output_name": "bswap_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
         }
     ]
 }
