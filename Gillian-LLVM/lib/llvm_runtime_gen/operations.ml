@@ -746,16 +746,12 @@ let conversion_patterns_generalized
       {
         exprs = [ expr ];
         types_ = [ LLVMRuntimeTypes.Int 32 ];
-        case_stat =
-          case_statement_for_int_to_float
-            (Expr.EList [ Expr.string "int"; expr ]);
+        case_stat = case_statement_for_int_to_float expr;
       };
       {
         exprs = [ expr ];
         types_ = [ LLVMRuntimeTypes.Int 64 ];
-        case_stat =
-          case_statement_for_int_to_float
-            (Expr.EList [ Expr.string "int"; expr ]);
+        case_stat = case_statement_for_int_to_float expr;
       };
       {
         exprs = [ expr ];
@@ -1228,6 +1224,21 @@ module OpFunctions = struct
           shape
     | None -> failwith "Fptosi function requires a result width"
 
+  let bitcast_fp_to_bv_function inputs shape =
+    let open Gil_syntax in
+    match shape.width_of_result with
+    | Some width ->
+        let lits = Some [width] in
+        bv_op_function ?literals:lits BVOps.NumToIEEEBV [List.hd inputs] shape
+    | None -> failwith "bitcast function requires a result width"
+
+  let bitcast_bv_to_fp_function inputs shape =
+    let open Gil_syntax in
+    match shape.width_of_result with
+    | Some width ->
+        bv_op_function BVOps.IEEEBVToNum [List.hd inputs] shape
+    | None -> failwith "bitcast function requires a result width"
+  
   let sub_function_overflow
       (op : BVOps.t)
       (inputs : Expr.t list)
@@ -2527,6 +2538,26 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
             (flag_template_function
                (template_from_pattern_conversion_generalized
                   ~op:OpFunctions.fptoui_function)
+               []);
+      };
+      {
+        (* TODO: Use a template that performs correct type checking *)
+        name = "bitcast_fp_to_bv";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_conversion
+                  ~op:OpFunctions.bitcast_fp_to_bv_function)
+               []);
+      };
+      {
+        (* TODO: Use a template that performs correct type checking *)
+        name = "bitcast_bv_to_fp";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_conversion
+                  ~op:OpFunctions.bitcast_bv_to_fp_function)
                []);
       };
       {

@@ -907,6 +907,8 @@ let encode_bvop
     | BVOps.BVSAddO -> binop_encode bv_saddo
     | BVOps.BVToInt -> unop_encode bv_to_int
     | BVOps.IntToBV -> int_to_bv (List.hd literals) (List.hd bvs)
+    | BVOps.IEEEBVToNum -> unop_encode ieee_bv_to_num
+    | BVOps.NumToIEEEBV -> num_to_ieee_bv (List.hd literals) (List.hd bvs)
   in
   Encoding.native
     (Option.map (fun w -> Gil_syntax.Type.BvType w) width

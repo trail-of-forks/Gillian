@@ -11,6 +11,7 @@ proc main() {
   v_9 := {{"float",3.0}};
   v_10 := {{"float",4294967294.0}};
   v_11 := {{"i-32",0x0v32}};
+  v_12 := {{"i-32",0x3FC00000v32}};
   
   (* Test fptosi *)
   r_1 := "fptosi"(v_1);
@@ -44,7 +45,11 @@ proc main() {
   r_12 := "sitofp"(v_6);
   assert((r_12 == v_9));
 
-  assert((v_1 == v_2));
+  (* Test bitcast *)
+  r_13 := "bitcast_fp_to_bv_32_32"(v_1);
+  assert((r_13 == v_12));
+  r_14 := "bitcast_bv_to_fp_32_32"(v_12);
+  assert((r_14 == v_1));
 
   ret := {{}};
   return

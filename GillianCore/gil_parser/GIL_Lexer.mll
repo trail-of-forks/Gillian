@@ -207,6 +207,8 @@ rule read = parse
   | "bvashr" { GIL_Parser.BVASHR }
   | "bvtoint" { GIL_Parser.BVTOINT }
   | "inttobv" { GIL_Parser.INTTOBV }
+  | "ieeebvtonum" { GIL_Parser.IEEEBVTONUM }
+  | "numtoieeebv" { GIL_Parser.NUMTOIEEEBV }
 (* Constants *)
   | "$$min_float"        { GIL_Parser.MIN_FLOAT     }
   | "$$max_float"        { GIL_Parser.MAX_FLOAT     }
