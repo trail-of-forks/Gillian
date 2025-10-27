@@ -285,7 +285,7 @@ module Node = struct
             if SVal.sure_is_zero sv then zeros
             else
               let chunk = SVal.leak_chunk sv in
-              let chunk_size = Expr.int (Chunk.size chunk) in
+              let chunk_size = Expr.bv_z (Z.of_int (Chunk.size chunk)) (Expr.bv_width size_right) in
               let zeros_can_be_converted_to_same_chunk =
                 let open Expr.Infix in
                 Expr.bv_urem size_right chunk_size
@@ -294,7 +294,7 @@ module Node = struct
               if%ent zeros_can_be_converted_to_same_chunk then
                 let+ zero_array =
                   SVArr.make_zeros
-                    ~size:Expr.Infix.(size_right / chunk_size)
+                    ~size:Expr.Infix.(Expr.bv_to_int size_right / Expr.int (Chunk.size chunk))
                     ~chunk
                 in
                 let result =
@@ -316,7 +316,7 @@ module Node = struct
             if SVal.sure_is_zero sv then zeros
             else
               let chunk = SVal.leak_chunk sv in
-              let chunk_size = Expr.int (Chunk.size chunk) in
+              let chunk_size = Expr.bv_z (Z.of_int (Chunk.size chunk)) (Expr.bv_width size_left) in
               let zeros_can_be_converted_to_same_chunk =
                 let open Expr.Infix in
                 Expr.bv_urem size_left chunk_size
@@ -325,7 +325,7 @@ module Node = struct
               if%ent zeros_can_be_converted_to_same_chunk then
                 let+ zero_array =
                   SVArr.make_zeros
-                    ~size:Expr.Infix.(size_left / chunk_size)
+                    ~size:Expr.Infix.(Expr.bv_to_int size_left / Expr.int (Chunk.size chunk))
                     ~chunk
                 in
                 let result =
@@ -349,7 +349,7 @@ module Node = struct
             if SVArr.sure_is_all_zeros arr then zeros
             else
               let chunk = SVArr.leak_chunk arr in
-              let chunk_size = Expr.int (Chunk.size chunk) in
+              let chunk_size = Expr.bv_z (Z.of_int (Chunk.size chunk)) (Expr.bv_width size_left) in
               let zeros_can_be_converted_to_same_chunk =
                 let open Expr.Infix in
                 Expr.bv_urem size_left chunk_size
@@ -358,7 +358,7 @@ module Node = struct
               if%ent zeros_can_be_converted_to_same_chunk then
                 let+ zero_array =
                   SVArr.make_zeros
-                    ~size:Expr.Infix.(size_left / chunk_size)
+                    ~size:Expr.Infix.(Expr.bv_to_int size_left / Expr.int (Chunk.size chunk))
                     ~chunk
                 in
                 let result =
@@ -371,7 +371,7 @@ module Node = struct
             if SVArr.sure_is_all_zeros arr then zeros
             else
               let chunk = SVArr.leak_chunk arr in
-              let chunk_size = Expr.int (Chunk.size chunk) in
+              let chunk_size = Expr.bv_z (Z.of_int (Chunk.size chunk)) (Expr.bv_width size_right) in
               let zeros_can_be_converted_to_same_chunk =
                 let open Expr.Infix in
                 Expr.bv_urem size_right chunk_size
@@ -380,7 +380,7 @@ module Node = struct
               if%ent zeros_can_be_converted_to_same_chunk then
                 let+ zero_array =
                   SVArr.make_zeros
-                    ~size:Expr.Infix.(size_right / chunk_size)
+                    ~size:Expr.Infix.(Expr.bv_to_int size_right / Expr.int (Chunk.size chunk))
                     ~chunk
                 in
                 let result =

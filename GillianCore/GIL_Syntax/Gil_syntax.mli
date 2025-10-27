@@ -315,6 +315,8 @@ module Expr : sig
   val bv_ult : t -> t -> t
   val bv_ugt : t -> t -> t
   val bv_urem : t -> t -> t
+  val bv_udiv : t -> t -> t
+  val bv_to_int : t -> t
   val bv_width : t -> int
   val lit : Literal.t -> t
   val num : float -> t
