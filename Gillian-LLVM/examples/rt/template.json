@@ -950,6 +950,20 @@
             ]
         },
         {
+            "name": "bvmul",
+            "output_name": "bvmul_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
             "name": "bvand",
             "output_name": "bvand_32_32_32",
             "spec": [
