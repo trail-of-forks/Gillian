@@ -1,7 +1,7 @@
 import "Gillian-LLVM/examples/rt/runtime.gil";
 proc main() {
   init_fresh := [setZeros]($lsym_g_3,0x0v64,0x4v64, "Freeable");
-  v_2 := {{"int-32",0x0v32}};
+  v_2 := {{"i-32",0x0v32}};
   v_3 := {{ "ptr", {{ $lsym_g_3, 0x0v64}} }};
   stash_unnamed := "llvm_store"("i-32",v_3,v_2);
   ret := {{}};
