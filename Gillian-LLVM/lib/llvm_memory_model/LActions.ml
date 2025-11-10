@@ -1,4 +1,12 @@
-type ac = DropPerm | GetCurPerm | WeakValidPointer | Store | Load | Memset | Memcpy
+type ac =
+  | DropPerm
+  | GetCurPerm
+  | WeakValidPointer
+  | Store
+  | Load
+  | Memset
+  | Memcpy
+
 type ga = Single | Array | Hole | Zeros | Bounds
 
 let str_ac = function

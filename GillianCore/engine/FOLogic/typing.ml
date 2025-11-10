@@ -564,7 +564,8 @@ module Type_lexpr = struct
     let arity =
       BVOps.(
         match op with
-        | BVNeg | BVNegO | BVNot | BVToInt | IntToBV | IEEEBVToNum | NumToIEEEBV -> 1
+        | BVNeg | BVNegO | BVNot | BVToInt | IntToBV | IEEEBVToNum | NumToIEEEBV
+          -> 1
         | BVShl
         | BVLShr
         | BVUrem

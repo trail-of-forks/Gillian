@@ -369,15 +369,23 @@ let pattern_function_ternary
     | Some width -> width
     | None -> failwith "Pointer operations should have a result"
   in
-  let case_statement_for_int (regular_val0 : Expr.t) (regular_val1 : Expr.t) (regular_val2 : Expr.t) =
+  let case_statement_for_int
+      (regular_val0 : Expr.t)
+      (regular_val1 : Expr.t)
+      (regular_val2 : Expr.t) =
     let int_valx = Expr.list_nth regular_val0 1 in
     let int_valy = Expr.list_nth regular_val1 1 in
     let int_valz = Expr.list_nth regular_val2 1 in
-    let* _ = add_overflow_check flag_checks [ int_valx; int_valy; int_valz ] shape in
+    let* _ =
+      add_overflow_check flag_checks [ int_valx; int_valy; int_valz ] shape
+    in
     let* _ =
       add_return_of_value
         (Expr.EList
-           [ Expr.list_nth regular_val0 0; op [ int_valx; int_valy; int_valz ] shape ])
+           [
+             Expr.list_nth regular_val0 0;
+             op [ int_valx; int_valy; int_valz ] shape;
+           ])
     in
     return ()
   in
@@ -387,7 +395,11 @@ let pattern_function_ternary
       {
         exprs = [ expr1; expr2; expr3 ];
         types_ =
-          [ LLVMRuntimeTypes.Int ptr_width; LLVMRuntimeTypes.Int ptr_width; LLVMRuntimeTypes.Int ptr_width ];
+          [
+            LLVMRuntimeTypes.Int ptr_width;
+            LLVMRuntimeTypes.Int ptr_width;
+            LLVMRuntimeTypes.Int ptr_width;
+          ];
         case_stat = case_statement_for_int expr1 expr2 expr3;
       };
     ]
@@ -586,14 +598,20 @@ let fp_patterns_ternary
   let open Codegenerator in
   let open TypePatterns in
   let open Gil_syntax.Expr.Infix in
-  let case_statement_for_float (regular_val0 : Expr.t) (regular_val1 : Expr.t) (regular_val2 : Expr.t) =
+  let case_statement_for_float
+      (regular_val0 : Expr.t)
+      (regular_val1 : Expr.t)
+      (regular_val2 : Expr.t) =
     let float_valx = Expr.list_nth regular_val0 1 in
     let float_valy = Expr.list_nth regular_val1 1 in
     let float_valz = Expr.list_nth regular_val2 1 in
     let* _ =
       add_return_of_value
         (Expr.EList
-           [ Expr.list_nth regular_val0 0; op2 [ op1 [ float_valx; float_valy ] shape; float_valz ] shape ])
+           [
+             Expr.list_nth regular_val0 0;
+             op2 [ op1 [ float_valx; float_valy ] shape; float_valz ] shape;
+           ])
     in
     return ()
   in
@@ -601,12 +619,14 @@ let fp_patterns_ternary
     [
       {
         exprs = [ expr1; expr2; expr3 ];
-        types_ = [ LLVMRuntimeTypes.F32; LLVMRuntimeTypes.F32; LLVMRuntimeTypes.F32 ];
+        types_ =
+          [ LLVMRuntimeTypes.F32; LLVMRuntimeTypes.F32; LLVMRuntimeTypes.F32 ];
         case_stat = case_statement_for_float expr1 expr2 expr3;
       };
       {
         exprs = [ expr1; expr2; expr3 ];
-        types_ = [ LLVMRuntimeTypes.F64; LLVMRuntimeTypes.F64; LLVMRuntimeTypes.F64 ];
+        types_ =
+          [ LLVMRuntimeTypes.F64; LLVMRuntimeTypes.F64; LLVMRuntimeTypes.F64 ];
         case_stat = case_statement_for_float expr1 expr2 expr3;
       };
     ]
@@ -1020,15 +1040,30 @@ module OpFunctions = struct
     | [ x; y; z ] ->
         let width = shape.width_of_result |> Option.get in
 
-        let concat_expr = bv_op_function BVOps.BVConcat [x; y] { shape with args = [width; width] } in
+        let concat_expr =
+          bv_op_function BVOps.BVConcat [ x; y ]
+            { shape with args = [ width; width ] }
+        in
         let width_bv = Expr.Lit (Literal.LBitvector (Z.of_int width, width)) in
-        let adjusted_z = bv_op_function BVOps.BVUrem [z; width_bv] { shape with args = [width; width] } in
+        let adjusted_z =
+          bv_op_function BVOps.BVUrem [ z; width_bv ]
+            { shape with args = [ width; width ] }
+        in
         let zext_lits = Some [ width ] in
-        let shift_amt = bv_op_function ?literals:zext_lits BVOps.BVZeroExtend [adjusted_z] { shape with args = [width] } in
-        let shifted = bv_op_function BVOps.BVShl [concat_expr; shift_amt] { shape with args = [width + width; width + width] } in
+        let shift_amt =
+          bv_op_function ?literals:zext_lits BVOps.BVZeroExtend [ adjusted_z ]
+            { shape with args = [ width ] }
+        in
+        let shifted =
+          bv_op_function BVOps.BVShl [ concat_expr; shift_amt ]
+            { shape with args = [ width + width; width + width ] }
+        in
 
         let ext_lits = Some [ width + width - 1; width ] in
-        let result = bv_op_function ?literals:ext_lits BVOps.BVExtract [shifted] { shape with args = [width] } in
+        let result =
+          bv_op_function ?literals:ext_lits BVOps.BVExtract [ shifted ]
+            { shape with args = [ width ] }
+        in
         return result
     | _ -> failwith "Invalid number of arguments"
 
@@ -1039,15 +1074,30 @@ module OpFunctions = struct
     | [ x; y; z ] ->
         let width = shape.width_of_result |> Option.get in
 
-        let concat_expr = bv_op_function BVOps.BVConcat [x; y] { shape with args = [width; width] } in
+        let concat_expr =
+          bv_op_function BVOps.BVConcat [ x; y ]
+            { shape with args = [ width; width ] }
+        in
         let width_bv = Expr.Lit (Literal.LBitvector (Z.of_int width, width)) in
-        let adjusted_z = bv_op_function BVOps.BVUrem [z; width_bv] { shape with args = [width; width] } in
+        let adjusted_z =
+          bv_op_function BVOps.BVUrem [ z; width_bv ]
+            { shape with args = [ width; width ] }
+        in
         let zext_lits = Some [ width ] in
-        let shift_amt = bv_op_function ?literals:zext_lits BVOps.BVZeroExtend [adjusted_z] { shape with args = [width] } in
-        let shifted = bv_op_function BVOps.BVLShr [concat_expr; shift_amt] { shape with args = [width + width; width] } in
+        let shift_amt =
+          bv_op_function ?literals:zext_lits BVOps.BVZeroExtend [ adjusted_z ]
+            { shape with args = [ width ] }
+        in
+        let shifted =
+          bv_op_function BVOps.BVLShr [ concat_expr; shift_amt ]
+            { shape with args = [ width + width; width ] }
+        in
 
         let ext_lits = Some [ width - 1; 0 ] in
-        let result = bv_op_function ?literals:ext_lits BVOps.BVExtract [shifted] { shape with args = [width] } in
+        let result =
+          bv_op_function ?literals:ext_lits BVOps.BVExtract [ shifted ]
+            { shape with args = [ width ] }
+        in
         return result
     | _ -> failwith "Invalid number of arguments"
 
@@ -1057,34 +1107,37 @@ module OpFunctions = struct
     match exprs with
     | [ x ] ->
         let width = shape.width_of_result |> Option.get in
-        
+
         if width mod 16 <> 0 then
           failwith "bswap requires an even number of bytes"
         else
           let num_bytes = width / 8 in
-          
+
           let rec extract_bytes extracted byte_idx =
-            if byte_idx >= num_bytes then
-              extracted
+            if byte_idx >= num_bytes then extracted
             else
-              let high_bit = (byte_idx + 1) * 8 - 1 in
+              let high_bit = ((byte_idx + 1) * 8) - 1 in
               let low_bit = byte_idx * 8 in
               let lits = Some [ high_bit; low_bit ] in
-              let byte_expr = bv_op_function ?literals:lits BVOps.BVExtract [x] { shape with args = [width] } in
-              extract_bytes (extracted @ [byte_expr]) (byte_idx + 1)
+              let byte_expr =
+                bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                  { shape with args = [ width ] }
+              in
+              extract_bytes (extracted @ [ byte_expr ]) (byte_idx + 1)
           in
-          
+
           let reversed_bytes = extract_bytes [] 0 in
-          
+
           let rec concat_bytes = function
             | [] -> failwith "Empty byte list"
-            | [byte] -> byte
-            | byte :: rest -> 
+            | [ byte ] -> byte
+            | byte :: rest ->
                 let rest_result = concat_bytes rest in
-                let rest_width = (List.length rest) * 8 in
-                bv_op_function BVOps.BVConcat [byte; rest_result] { shape with args = [8; rest_width] }
+                let rest_width = List.length rest * 8 in
+                bv_op_function BVOps.BVConcat [ byte; rest_result ]
+                  { shape with args = [ 8; rest_width ] }
           in
-          
+
           let result = concat_bytes reversed_bytes in
           return result
     | _ -> failwith "Invalid number of arguments"
@@ -1095,37 +1148,45 @@ module OpFunctions = struct
     match exprs with
     | [ x ] ->
         let width = shape.width_of_result |> Option.get in
-        
+
         (* Divide and conquer population count *)
         let rec popcount_dc start_idx end_idx =
           let current_width = end_idx - start_idx + 1 in
           if current_width = 1 then
             (* Base case: single bit - extract and zero-extend to target width *)
-            let lits = Some [start_idx; start_idx] in
-            let bit = bv_op_function ?literals:lits BVOps.BVExtract [x] { shape with args = [width] } in
-            let lits_ext = Some [width] in
-            bv_op_function ?literals:lits_ext BVOps.BVZeroExtend [bit] { shape with args = [1] }
+            let lits = Some [ start_idx; start_idx ] in
+            let bit =
+              bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                { shape with args = [ width ] }
+            in
+            let lits_ext = Some [ width ] in
+            bv_op_function ?literals:lits_ext BVOps.BVZeroExtend [ bit ]
+              { shape with args = [ 1 ] }
           else
             (* Divide: split into two halves *)
             let half_width = current_width / 2 in
             let mid_idx = start_idx + half_width - 1 in
-            
+
             (* Conquer: recursively compute population count for each half *)
             let upper_count = popcount_dc (mid_idx + 1) end_idx in
             let lower_count = popcount_dc start_idx mid_idx in
-            
+
             (* Combine: add the results from both halves *)
             (* Both results should already be of width 'width' *)
-            let sum = bv_op_function BVOps.BVPlus [upper_count; lower_count] { shape with args = [width; width] } in
+            let sum =
+              bv_op_function BVOps.BVPlus
+                [ upper_count; lower_count ]
+                { shape with args = [ width; width ] }
+            in
             (* Truncate the result back to target width (in case of carry) *)
-            let lits = Some [width - 1; 0] in
-            bv_op_function ?literals:lits BVOps.BVExtract [sum] { shape with args = [width + 1] }
+            let lits = Some [ width - 1; 0 ] in
+            bv_op_function ?literals:lits BVOps.BVExtract [ sum ]
+              { shape with args = [ width + 1 ] }
         in
-        
+
         let count_result = popcount_dc 0 (width - 1) in
         return count_result
     | _ -> failwith "Invalid number of arguments"
-
 
   let uitofp_function inputs shape =
     let open Gil_syntax in
@@ -1228,17 +1289,16 @@ module OpFunctions = struct
     let open Gil_syntax in
     match shape.width_of_result with
     | Some width ->
-        let lits = Some [width] in
-        bv_op_function ?literals:lits BVOps.NumToIEEEBV [List.hd inputs] shape
+        let lits = Some [ width ] in
+        bv_op_function ?literals:lits BVOps.NumToIEEEBV [ List.hd inputs ] shape
     | None -> failwith "bitcast function requires a result width"
 
   let bitcast_bv_to_fp_function inputs shape =
     let open Gil_syntax in
     match shape.width_of_result with
-    | Some width ->
-        bv_op_function BVOps.IEEEBVToNum [List.hd inputs] shape
+    | Some width -> bv_op_function BVOps.IEEEBVToNum [ List.hd inputs ] shape
     | None -> failwith "bitcast function requires a result width"
-  
+
   let sub_function_overflow
       (op : BVOps.t)
       (inputs : Expr.t list)
@@ -1276,18 +1336,33 @@ module OpFunctions = struct
         let y_width = List.nth shape.args 1 in
 
         (* Shift amount = x_width - (y + res_width) *)
-        let res_width_bv = Expr.Lit (Literal.LBitvector (Z.of_int res_width, y_width)) in
-        let last_index = bv_op_function BVOps.BVPlus [y; res_width_bv] { shape with args = [y_width; y_width] } in
-        let x_width_bv = Expr.Lit (Literal.LBitvector (Z.of_int x_width, x_width)) in
-        let shift_amount = bv_op_function BVOps.BVSub [x_width_bv; last_index] { shape with args = [x_width; y_width] } in
-        let shifted = bv_op_function BVOps.BVLShr [x; shift_amount] { shape with args = [x_width; y_width] } in
+        let res_width_bv =
+          Expr.Lit (Literal.LBitvector (Z.of_int res_width, y_width))
+        in
+        let last_index =
+          bv_op_function BVOps.BVPlus [ y; res_width_bv ]
+            { shape with args = [ y_width; y_width ] }
+        in
+        let x_width_bv =
+          Expr.Lit (Literal.LBitvector (Z.of_int x_width, x_width))
+        in
+        let shift_amount =
+          bv_op_function BVOps.BVSub [ x_width_bv; last_index ]
+            { shape with args = [ x_width; y_width ] }
+        in
+        let shifted =
+          bv_op_function BVOps.BVLShr [ x; shift_amount ]
+            { shape with args = [ x_width; y_width ] }
+        in
 
         let high_index = res_width - 1 in
         let lits = Some [ high_index; 0 ] in
-        let result = bv_op_function ?literals:lits BVOps.BVExtract [shifted] { shape with args = [x_width] } in
+        let result =
+          bv_op_function ?literals:lits BVOps.BVExtract [ shifted ]
+            { shape with args = [ x_width ] }
+        in
         return result
     | _ -> failwith "Invalid number of arguments"
-  
 end
 
 let template_from_pattern_unary
@@ -1313,7 +1388,8 @@ let template_from_pattern_ternary
   match List.nth_opt shape.args 0 with
   | Some width when width = pointer_width ->
       op_function name 3 (function
-        | [ x; y; z ] -> pattern_function_ternary x y z shape op commutative flag_checks
+        | [ x; y; z ] ->
+            pattern_function_ternary x y z shape op commutative flag_checks
         | _ -> failwith "Invalid number of arguments")
   | _ -> op_function name 3 (fun xs -> op_bv_scheme xs op flag_checks shape)
 
@@ -1369,7 +1445,8 @@ let template_from_pattern_fp_ternary
     (name : string)
     (shape : bv_op_shape) =
   op_function name 3 (function
-    | [ x; y; z ] -> fp_patterns_ternary ~pointer_width x y z op1 op2 shape flag_checks
+    | [ x; y; z ] ->
+        fp_patterns_ternary ~pointer_width x y z op1 op2 shape flag_checks
     | _ -> failwith "Invalid number of arguments")
 
 let template_from_pattern_fp_ext
@@ -1604,7 +1681,9 @@ module MemoryLib = struct
                    let* _ =
                      add_cmd
                        (Cmd.LAction
-                          (bindr, memset_name, [ base; offset; byte_value; byte_count ]))
+                          ( bindr,
+                            memset_name,
+                            [ base; offset; byte_value; byte_count ] ))
                    in
                    return ())
                  ptr)
@@ -1644,7 +1723,15 @@ module MemoryLib = struct
                    let* _ =
                      add_cmd
                        (Cmd.LAction
-                          (bindr, memcpy_name, [ dst_base; dst_offset; src_base; src_offset; byte_count ]))
+                          ( bindr,
+                            memcpy_name,
+                            [
+                              dst_base;
+                              dst_offset;
+                              src_base;
+                              src_offset;
+                              byte_count;
+                            ] ))
                    in
                    return ())
                  dst)
@@ -1682,20 +1769,42 @@ module MemoryLib = struct
                pointer_op
                  ~is_ptr_case:(fun bindr ->
                    let temp_buf_sym = fresh_sym () in
-                   let* _ = 
-                     add_cmd (Cmd.LAction (temp_buf_sym, alloc_name, [ Expr.zero_bv pointer_width; byte_count ]))
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          ( temp_buf_sym,
+                            alloc_name,
+                            [ Expr.zero_bv pointer_width; byte_count ] ))
                    in
                    let temp_buf = Expr.PVar temp_buf_sym in
-                   let { base = temp_base; offset = temp_offset } = access_ptr temp_buf in
-                   let* _ =
-                     add_cmd
-                       (Cmd.LAction
-                          (bindr, memcpy_name, [ temp_base; temp_offset; src_base; src_offset; byte_count ]))
+                   let { base = temp_base; offset = temp_offset } =
+                     access_ptr temp_buf
                    in
                    let* _ =
                      add_cmd
                        (Cmd.LAction
-                          (bindr, memcpy_name, [ dst_base; dst_offset; temp_base; temp_offset; byte_count ]))
+                          ( bindr,
+                            memcpy_name,
+                            [
+                              temp_base;
+                              temp_offset;
+                              src_base;
+                              src_offset;
+                              byte_count;
+                            ] ))
+                   in
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          ( bindr,
+                            memcpy_name,
+                            [
+                              dst_base;
+                              dst_offset;
+                              temp_base;
+                              temp_offset;
+                              byte_count;
+                            ] ))
                    in
                    return ())
                  dst)
@@ -1787,9 +1896,21 @@ module Libc = struct
       { name = "calloc"; output_name = "calloc"; spec = SimpleSpec };
       { name = "exit"; output_name = "exit"; spec = SimpleSpec };
       { name = "getchar"; output_name = "getchar"; spec = SimpleSpec };
-      { name = "llvm_memset"; output_name = libc_memset_name; spec = SimpleSpec };
-      { name = "llvm_memcpy"; output_name = libc_memcpy_name; spec = SimpleSpec };
-      { name = "llvm_memmove"; output_name = libc_memmove_name; spec = SimpleSpec };
+      {
+        name = "llvm_memset";
+        output_name = libc_memset_name;
+        spec = SimpleSpec;
+      };
+      {
+        name = "llvm_memcpy";
+        output_name = libc_memcpy_name;
+        spec = SimpleSpec;
+      };
+      {
+        name = "llvm_memmove";
+        output_name = libc_memmove_name;
+        spec = SimpleSpec;
+      };
     ]
 
   let constant_return_func
@@ -2042,9 +2163,7 @@ module UtilityOps = struct
         let join_block = fresh_sym () in
         let bexpr =
           Expr.BVExprIntrinsic
-            ( BVOps.BVUlt,
-              [ BvExpr (x, width); BvExpr (y, width) ],
-              None )
+            (BVOps.BVUlt, [ BvExpr (x, width); BvExpr (y, width) ], None)
         in
         let* _ =
           ite bexpr
@@ -2071,9 +2190,7 @@ module UtilityOps = struct
         let join_block = fresh_sym () in
         let bexpr =
           Expr.BVExprIntrinsic
-            ( BVOps.BVSlt,
-              [ BvExpr (x, width); BvExpr (y, width) ],
-              None )
+            (BVOps.BVSlt, [ BvExpr (x, width); BvExpr (y, width) ], None)
         in
         let* _ =
           ite bexpr
@@ -2100,9 +2217,7 @@ module UtilityOps = struct
         let join_block = fresh_sym () in
         let bexpr =
           Expr.BVExprIntrinsic
-            ( BVOps.BVSlt,
-              [ BvExpr (x, width); BvExpr (y, width) ],
-              None )
+            (BVOps.BVSlt, [ BvExpr (x, width); BvExpr (y, width) ], None)
         in
         let* _ =
           ite bexpr
@@ -2143,6 +2258,65 @@ module UtilityOps = struct
                return ())
         in
         let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let create_symbolic_int_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let* _ = add_cmd (Cmd.Logic (LCmd.FreshSVar bindr)) in
+        let* _ =
+          add_cmd
+            (Cmd.Logic
+               (LCmd.AssumeType
+                  ( Expr.PVar bindr,
+                    LLVMRuntimeTypes.rtype_to_gil_type
+                      (LLVMRuntimeTypes.Int width) )))
+        in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let create_symbolic_float_function (exprs : Expr.t list) (shape : bv_op_shape)
+      : Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [] ->
+        let width = shape.width_of_result |> Option.get in
+        let rtype =
+          match width with
+          | 32 -> LLVMRuntimeTypes.F32
+          | 64 -> LLVMRuntimeTypes.F64
+          | _ -> failwith "Invalid width"
+        in
+        let bindr = fresh_sym () in
+        let* _ = add_cmd (Cmd.Logic (LCmd.FreshSVar bindr)) in
+        let* _ =
+          add_cmd
+            (Cmd.Logic
+               (LCmd.AssumeType
+                  (Expr.PVar bindr, LLVMRuntimeTypes.rtype_to_gil_type rtype)))
+        in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let create_symbolic_ptr_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [] ->
+        let bindr = fresh_sym () in
+        let* _ = add_cmd (Cmd.Logic (LCmd.FreshSVar bindr)) in
+        let* _ =
+          add_cmd
+            (Cmd.Logic
+               (LCmd.AssumeType
+                  ( Expr.PVar bindr,
+                    LLVMRuntimeTypes.rtype_to_gil_type LLVMRuntimeTypes.Ptr )))
+        in
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
@@ -2188,14 +2362,18 @@ module UtilityOps = struct
         let bindr = fresh_sym () in
         let join_block = fresh_sym () in
 
-        let add_expr = 
-          Expr.BVExprIntrinsic (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
         in
         let max_val = bv_z (Z.pred (Z.shift_left Z.one width)) width in
-        
+
         (* Check if x + y would overflow by checking if x > max_val - y *)
-        let max_minus_y = 
-          Expr.BVExprIntrinsic (BVOps.BVSub, [ BvExpr (max_val, width); BvExpr (y, width) ], Some width)
+        let max_minus_y =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVSub,
+              [ BvExpr (max_val, width); BvExpr (y, width) ],
+              Some width )
         in
         let bexpr =
           Expr.BVExprIntrinsic
@@ -2320,11 +2498,38 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "create_symbolic_int";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.create_symbolic_int_function)
+               []);
+      };
+      {
+        name = "create_symbolic_float";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.create_symbolic_float_function)
+               []);
+      };
+      {
+        name = "create_symbolic_ptr";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.create_symbolic_ptr_function)
+               []);
+      };
+      {
         name = "extractvalue";
         generator =
           ValueOp
             (flag_template_function
-               (UtilityOps.generic_template_function 
+               (UtilityOps.generic_template_function
                   ~op:OpFunctions.extract_value_function)
                []);
       };
@@ -2475,7 +2680,7 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
         generator =
           ValueOp
             (flag_template_function
-               (UtilityOps.generic_template_function 
+               (UtilityOps.generic_template_function
                   ~op:OpFunctions.fshl_function)
                []);
       };
@@ -2484,7 +2689,7 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
         generator =
           ValueOp
             (flag_template_function
-               (UtilityOps.generic_template_function 
+               (UtilityOps.generic_template_function
                   ~op:OpFunctions.fshr_function)
                []);
       };
@@ -2493,7 +2698,7 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
         generator =
           ValueOp
             (flag_template_function
-               (UtilityOps.generic_template_function 
+               (UtilityOps.generic_template_function
                   ~op:OpFunctions.bswap_function)
                []);
       };
@@ -2502,7 +2707,7 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
         generator =
           ValueOp
             (flag_template_function
-               (UtilityOps.generic_template_function 
+               (UtilityOps.generic_template_function
                   ~op:OpFunctions.ctpop_function)
                []);
       };
@@ -2629,7 +2834,9 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
         generator =
           ValueOp
             (flag_template_function
-               (template_from_pattern_fp_ternary ~op1:OpFunctions.fp_mul_function ~op2:OpFunctions.fp_add_function)
+               (template_from_pattern_fp_ternary
+                  ~op1:OpFunctions.fp_mul_function
+                  ~op2:OpFunctions.fp_add_function)
                []);
       };
       {

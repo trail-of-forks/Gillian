@@ -1,0 +1,31 @@
+
+import "Gillian-LLVM/examples/rt/runtime.gil";
+proc main() {
+  r_0 := "create_symbolic_int_32"();
+  r_0_val := l-nth(r_0, 1i);
+  r_0_type := typeOf r_0_val;
+  assert((r_0_type == Bitvector(32i)));
+
+  r_1 := "create_symbolic_int_64"();
+  r_1_val := l-nth(r_1, 1i);
+  r_1_type := typeOf r_1_val;
+  assert((r_1_type == Bitvector(64i)));
+
+  r_2 := "create_symbolic_float_32"();
+  r_2_val := l-nth(r_2, 1i);
+  r_2_type := typeOf r_2_val;
+  assert((r_2_type == Num));
+
+  r_3 := "create_symbolic_float_64"();
+  r_3_val := l-nth(r_3, 1i);
+  r_3_type := typeOf r_3_val;
+  assert((r_3_type == Num));
+
+  r_4 := "create_symbolic_ptr_64"();
+  r_4_val := l-nth(r_4, 1i);
+  r_4_type := typeOf r_4_val;
+  assert((r_4_type == List));
+
+  ret := {{}};
+  return
+};
