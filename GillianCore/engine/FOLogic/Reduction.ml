@@ -1025,6 +1025,17 @@ and reduce_lexpr_loop
                   let mask = Z.sub (Z.shift_left Z.one w) Z.one in
                   let masked_result = Z.logand result mask in
                   Some (Expr.Lit (Literal.LBitvector (masked_result, w)))
+              | ( BVOps.BVToInt,
+                  [ Expr.BvExpr (Expr.Lit (Literal.LBitvector (v, w)), _) ] ) ->
+                  Some (Expr.Lit (Literal.Int v))
+              | ( BVOps.IEEEBVToNum,
+                  [ Expr.BvExpr (Expr.Lit (Literal.LBitvector (v, 32)), _) ] )
+                ->
+                  let float_val =
+                    let int32_val = Z.to_int32 v in
+                    Int32.float_of_bits int32_val
+                  in
+                  Some (Expr.Lit (Literal.Num float_val))
               | _ -> None
             with _ -> None
           else None

@@ -13,6 +13,7 @@ type mem_ac =
   | ZeroInit
   | GetArray
   | GetBounds
+  | Memset
 
 type genv_ac = GetSymbol | SetSymbol | GetDef | SetDef
 type ac = AGEnv of genv_ac | AMem of mem_ac
@@ -44,6 +45,7 @@ let str_mem_ac = function
   | ZeroInit -> "zeroinit"
   | GetArray -> "getArray"
   | GetBounds -> "getBounds"
+  | Memset -> "memset"
 
 let mem_ac_from_str = function
   | "alloc" -> Alloc
@@ -58,6 +60,7 @@ let mem_ac_from_str = function
   | "zeroinit" -> ZeroInit
   | "getArray" -> GetArray
   | "getBounds" -> GetBounds
+  | "memset" -> Memset
   | s -> failwith ("Unknown Memory Action : " ^ s)
 
 let str_genv_ac = function

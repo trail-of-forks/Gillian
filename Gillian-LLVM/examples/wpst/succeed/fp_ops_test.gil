@@ -11,6 +11,8 @@ proc main() {
   f_8 := {{"float",4.8}};
   f_9 := {{"float",2.0}};
   f_10 := {{"float",2.4}};
+  f_11 := {{"float",4.0}};
+  f_12 := {{"float",9.5}};
 
   d_1 := {{"double",1.5}};
   d_2 := {{"double",-2.3}};
@@ -22,6 +24,8 @@ proc main() {
   d_8 := {{"double",4.8}};
   d_9 := {{"double",2.0}};
   d_10 := {{"double",2.4}};
+  d_11 := {{"double",4.0}};
+  d_12 := {{"double",9.5}};
 
   (* Test sub *)
   r_1 := "fpsub_32_32_32"(f_1, f_2);
@@ -62,6 +66,56 @@ proc main() {
   (* Test ext *)
   r_15 := "fpext_32_64"(f_1);
   assert((r_15 == d_1));
+
+  (* Test add *)
+  r_16 := "fpadd_32_32_32"(f_1, f_5);
+  assert((r_16 == f_11));
+  r_17 := "fpadd_32_32_32"(f_5, f_1);
+  assert((r_17 == f_11));
+  r_18 := "fpadd_64_64_64"(d_1, d_5);
+  assert((r_18 == d_11));
+  r_19 := "fpadd_64_64_64"(d_5, d_1);
+  assert((r_19 == d_11));
+
+  (* Test neg *)
+  r_20 := "fpneg_32_32"(f_3);
+  assert((r_20 == f_4));
+  r_21 := "fpneg_32_32"(f_4);
+  assert((r_21 == f_3));
+  r_22 := "fpneg_64_64"(d_3);
+  assert((r_22 == d_4));
+  r_23 := "fpneg_64_64"(d_4);
+  assert((r_23 == d_3));
+
+  (* Test muladd *)
+  r_24 := "fpmuladd_32_32_32_32"(f_5, f_6, f_9);
+  assert((r_24 == f_12));
+  r_25 := "fpmuladd_32_32_32_32"(f_6, f_5, f_9);
+  assert((r_25 == f_12));
+  r_26 := "fpmuladd_64_64_64_64"(d_5, d_6, d_9);
+  assert((r_26 == d_12));
+  r_27 := "fpmuladd_64_64_64_64"(d_6, d_5, d_9);
+  assert((r_27 == d_12));
+
+  (* Test floor *)
+  r_28 := "fpfloor_32_32"(f_10);
+  assert((r_28 == f_9));
+  r_29 := "fpfloor_32_32"(f_3);
+  assert((r_29 == f_6));
+  r_30 := "fpfloor_64_64"(d_10);
+  assert((r_30 == d_9));
+  r_31 := "fpfloor_64_64"(d_3);
+  assert((r_31 == d_6));
+
+  (* Test ceil *)
+  r_32 := "fpceil_32_32"(f_10);
+  assert((r_32 == f_6));
+  r_33 := "fpceil_32_32"(f_3);
+  assert((r_33 == f_11));
+  r_34 := "fpceil_64_64"(d_10);
+  assert((r_34 == d_6));
+  r_35 := "fpceil_64_64"(d_3);
+  assert((r_35 == d_11));
 
   ret := {{}};
   return

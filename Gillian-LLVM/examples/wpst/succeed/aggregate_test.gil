@@ -1,0 +1,27 @@
+
+import "Gillian-LLVM/examples/rt/runtime.gil";
+proc main() {
+  s_0 := {{"i-64", 0x0v64}};
+  s_8 := {{"i-64", 0x8v64}};
+  s_16 := {{"i-64", 0x10v64}};
+  s_56 := {{"i-64", 0x38v64}};
+
+  v_1 := {{"i-64",0x1234567890ABCDEFv64}};
+  v_2 := {{"i-8",0x12v8}};
+  v_3 := {{"i-8",0x34v8}};
+  v_4 := {{"i-8",0xEFv8}};
+  v_5 := {{"i-32",0x567890ABv32}};
+
+  (* Test extractvalue *)
+  r_0 := "extractvalue_64_64_8"(v_1, s_0);
+  assert((r_0 == v_2));
+  r_1 := "extractvalue_64_64_8"(v_1, s_8);
+  assert((r_1 == v_3));
+  r_2 := "extractvalue_64_64_8"(v_1, s_56);
+  assert((r_2 == v_4));
+  r_3 := "extractvalue_64_64_32"(v_1, s_16);
+  assert((r_3 == v_5));
+
+  ret := {{}};
+  return
+};

@@ -309,6 +309,27 @@
             ]
         },
         {
+            "name": "llvm_memset",
+            "output_name": "llvm_memset",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
+            "name": "llvm_memcpy",
+            "output_name": "llvm_memcpy",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
+            "name": "llvm_memmove",
+            "output_name": "llvm_memmove",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
             "name": "bvadd",
             "output_name": "bvadd_64_64_64",
             "spec": [
@@ -338,6 +359,40 @@
                             32
                         ],
                         "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpadd",
+            "output_name": "fpadd_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [
+                            32,
+                            32
+                        ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpadd",
+            "output_name": "fpadd_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [
+                            64,
+                            64
+                        ],
+                        "width_of_result": 64
                     }
                 }
             ]
@@ -454,6 +509,62 @@
                     "shape": {
                         "args": [32],
                         "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpneg",
+            "output_name": "fpneg_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpneg",
+            "output_name": "fpneg_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpmuladd",
+            "output_name": "fpmuladd_32_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32, 32],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpmuladd",
+            "output_name": "fpmuladd_64_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64, 64, 64],
+                        "width_of_result": 64
                     }
                 }
             ]
@@ -839,6 +950,20 @@
             ]
         },
         {
+            "name": "bvmul",
+            "output_name": "bvmul_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
             "name": "bvand",
             "output_name": "bvand_32_32_32",
             "spec": [
@@ -897,6 +1022,20 @@
         {
             "name": "bvlshr",
             "output_name": "bvlshr_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvashr",
+            "output_name": "bvashr_32_32_32",
             "spec": [
                 "ValueSpec",
                 {
@@ -988,6 +1127,342 @@
                     "shape": {
                         "args": [ 32 ],
                         "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "extractvalue",
+            "output_name": "extractvalue_64_64_8",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 8
+                    }
+                }
+            ]
+        },
+        {
+            "name": "extractvalue",
+            "output_name": "extractvalue_64_64_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvumax",
+            "output_name": "bvumax_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvumax",
+            "output_name": "bvumax_64_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64, 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvsmin",
+            "output_name": "bvsmin_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvsmax",
+            "output_name": "bvsmax_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpfloor",
+            "output_name": "fpfloor_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpfloor",
+            "output_name": "fpfloor_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpceil",
+            "output_name": "fpceil_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fpceil",
+            "output_name": "fpceil_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "uaddsat",
+            "output_name": "uaddsat_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "ctpop",
+            "output_name": "ctpop_8_8",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 8 ],
+                        "width_of_result": 8
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvfshl",
+            "output_name": "bvfshl_32_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bvfshr",
+            "output_name": "bvfshr_32_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bswap",
+            "output_name": "bswap_16_16",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 16 ],
+                        "width_of_result": 16
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bswap",
+            "output_name": "bswap_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bitcast_fp_to_bv",
+            "output_name": "bitcast_fp_to_bv_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "bitcast_bv_to_fp",
+            "output_name": "bitcast_bv_to_fp_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "create_symbolic_int",
+            "output_name": "create_symbolic_int_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "create_symbolic_int",
+            "output_name": "create_symbolic_int_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "create_symbolic_float",
+            "output_name": "create_symbolic_float_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "create_symbolic_float",
+            "output_name": "create_symbolic_float_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "create_symbolic_ptr",
+            "output_name": "create_symbolic_ptr_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "cmpxchg",
+            "output_name": "cmpxchg_64_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64, 32, 32],
+                        "width_of_result": 33
                     }
                 }
             ]

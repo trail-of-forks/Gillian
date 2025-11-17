@@ -16,8 +16,8 @@ proc main() {
     ytopslice := l-nth(splity,0i);
     ybotslice := l-nth(splity,1i);
 
-    newx := concat(Bitvector(xtopslice, 16i), Bitvector(ybotslice, 16i) : 32i);
-    newy := concat(Bitvector(ytopslice, 16i), Bitvector(xbotslice, 16i) : 32i);
+    newx := bvconcat(Bitvector(xtopslice, 16i), Bitvector(ybotslice, 16i) : 32i);
+    newy := bvconcat(Bitvector(ytopslice, 16i), Bitvector(xbotslice, 16i) : 32i);
 
     sum0 := bvadd(Bitvector(x,32i), Bitvector(y,32i): 32i);
     sum1 := bvadd(Bitvector(newx,32i), Bitvector(newy,32i): 32i);

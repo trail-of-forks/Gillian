@@ -13,6 +13,7 @@ type mem_ac =
   | ZeroInit
   | GetArray
   | GetBounds
+  | Memset
 
 type genv_ac = GetSymbol | SetSymbol | GetDef | SetDef
 

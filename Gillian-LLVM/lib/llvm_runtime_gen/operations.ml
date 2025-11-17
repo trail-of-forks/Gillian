@@ -353,6 +353,60 @@ let pattern_function_unary
   let* _ = type_dispatch patterns default_statement in
   return ()
 
+let pattern_function_ternary
+    (expr1 : Expr.t)
+    (expr2 : Expr.t)
+    (expr3 : Expr.t)
+    (shape : bv_op_shape)
+    (op : bv_op_function)
+    (commutative : bool)
+    (flag_checks : bv_op_function list option) =
+  let open Codegenerator in
+  let open TypePatterns in
+  let open Gil_syntax.Expr.Infix in
+  let ptr_width =
+    match shape.width_of_result with
+    | Some width -> width
+    | None -> failwith "Pointer operations should have a result"
+  in
+  let case_statement_for_int
+      (regular_val0 : Expr.t)
+      (regular_val1 : Expr.t)
+      (regular_val2 : Expr.t) =
+    let int_valx = Expr.list_nth regular_val0 1 in
+    let int_valy = Expr.list_nth regular_val1 1 in
+    let int_valz = Expr.list_nth regular_val2 1 in
+    let* _ =
+      add_overflow_check flag_checks [ int_valx; int_valy; int_valz ] shape
+    in
+    let* _ =
+      add_return_of_value
+        (Expr.EList
+           [
+             Expr.list_nth regular_val0 0;
+             op [ int_valx; int_valy; int_valz ] shape;
+           ])
+    in
+    return ()
+  in
+  let default_statement = add_cmd (fail_cmd "No_type_pattern_matched" []) in
+  let patterns =
+    [
+      {
+        exprs = [ expr1; expr2; expr3 ];
+        types_ =
+          [
+            LLVMRuntimeTypes.Int ptr_width;
+            LLVMRuntimeTypes.Int ptr_width;
+            LLVMRuntimeTypes.Int ptr_width;
+          ];
+        case_stat = case_statement_for_int expr1 expr2 expr3;
+      };
+    ]
+  in
+  let* _ = type_dispatch patterns default_statement in
+  return ()
+
 let cmp_patterns
     ~(pointer_width : int)
     (expr1 : Expr.t)
@@ -532,6 +586,55 @@ let fp_patterns_unary
   let* _ = type_dispatch patterns default_statement in
   return ()
 
+let fp_patterns_ternary
+    ~(pointer_width : int)
+    (expr1 : Expr.t)
+    (expr2 : Expr.t)
+    (expr3 : Expr.t)
+    (op1 : bv_op_function)
+    (op2 : bv_op_function)
+    (shape : bv_op_shape)
+    (flag_checks : bv_op_function list option) =
+  let open Codegenerator in
+  let open TypePatterns in
+  let open Gil_syntax.Expr.Infix in
+  let case_statement_for_float
+      (regular_val0 : Expr.t)
+      (regular_val1 : Expr.t)
+      (regular_val2 : Expr.t) =
+    let float_valx = Expr.list_nth regular_val0 1 in
+    let float_valy = Expr.list_nth regular_val1 1 in
+    let float_valz = Expr.list_nth regular_val2 1 in
+    let* _ =
+      add_return_of_value
+        (Expr.EList
+           [
+             Expr.list_nth regular_val0 0;
+             op2 [ op1 [ float_valx; float_valy ] shape; float_valz ] shape;
+           ])
+    in
+    return ()
+  in
+  let patterns =
+    [
+      {
+        exprs = [ expr1; expr2; expr3 ];
+        types_ =
+          [ LLVMRuntimeTypes.F32; LLVMRuntimeTypes.F32; LLVMRuntimeTypes.F32 ];
+        case_stat = case_statement_for_float expr1 expr2 expr3;
+      };
+      {
+        exprs = [ expr1; expr2; expr3 ];
+        types_ =
+          [ LLVMRuntimeTypes.F64; LLVMRuntimeTypes.F64; LLVMRuntimeTypes.F64 ];
+        case_stat = case_statement_for_float expr1 expr2 expr3;
+      };
+    ]
+  in
+  let default_statement = add_cmd (fail_cmd "No_type_pattern_matched" []) in
+  let* _ = type_dispatch patterns default_statement in
+  return ()
+
 let fp_ext_patterns
     ~(pointer_width : int)
     (expr : Expr.t)
@@ -663,16 +766,12 @@ let conversion_patterns_generalized
       {
         exprs = [ expr ];
         types_ = [ LLVMRuntimeTypes.Int 32 ];
-        case_stat =
-          case_statement_for_int_to_float
-            (Expr.EList [ Expr.string "int"; expr ]);
+        case_stat = case_statement_for_int_to_float expr;
       };
       {
         exprs = [ expr ];
         types_ = [ LLVMRuntimeTypes.Int 64 ];
-        case_stat =
-          case_statement_for_int_to_float
-            (Expr.EList [ Expr.string "int"; expr ]);
+        case_stat = case_statement_for_int_to_float expr;
       };
       {
         exprs = [ expr ];
@@ -805,6 +904,7 @@ module OpFunctions = struct
   let sdiv_op_function = bv_op_function BVOps.BVSdiv
   let shl_op_function = bv_op_function BVOps.BVShl
   let lshr_op_function = bv_op_function BVOps.BVLShr
+  let ashr_op_function = bv_op_function BVOps.BVAshr
   let srem_op_function = bv_op_function BVSrem
   let mul_op_nuw = bv_check_function BVOps.BVUMulO
   let mul_op_nsw = bv_check_function BVOps.BVSMulO
@@ -933,6 +1033,161 @@ module OpFunctions = struct
         else [ output - 1; 0 ])
       BVOps.BVExtract
 
+  let fshl_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y; z ] ->
+        let width = shape.width_of_result |> Option.get in
+
+        let concat_expr =
+          bv_op_function BVOps.BVConcat [ x; y ]
+            { shape with args = [ width; width ] }
+        in
+        let width_bv = Expr.Lit (Literal.LBitvector (Z.of_int width, width)) in
+        let adjusted_z =
+          bv_op_function BVOps.BVUrem [ z; width_bv ]
+            { shape with args = [ width; width ] }
+        in
+        let zext_lits = Some [ width ] in
+        let shift_amt =
+          bv_op_function ?literals:zext_lits BVOps.BVZeroExtend [ adjusted_z ]
+            { shape with args = [ width ] }
+        in
+        let shifted =
+          bv_op_function BVOps.BVShl [ concat_expr; shift_amt ]
+            { shape with args = [ width + width; width + width ] }
+        in
+
+        let ext_lits = Some [ width + width - 1; width ] in
+        let result =
+          bv_op_function ?literals:ext_lits BVOps.BVExtract [ shifted ]
+            { shape with args = [ width ] }
+        in
+        return result
+    | _ -> failwith "Invalid number of arguments"
+
+  let fshr_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y; z ] ->
+        let width = shape.width_of_result |> Option.get in
+
+        let concat_expr =
+          bv_op_function BVOps.BVConcat [ x; y ]
+            { shape with args = [ width; width ] }
+        in
+        let width_bv = Expr.Lit (Literal.LBitvector (Z.of_int width, width)) in
+        let adjusted_z =
+          bv_op_function BVOps.BVUrem [ z; width_bv ]
+            { shape with args = [ width; width ] }
+        in
+        let zext_lits = Some [ width ] in
+        let shift_amt =
+          bv_op_function ?literals:zext_lits BVOps.BVZeroExtend [ adjusted_z ]
+            { shape with args = [ width ] }
+        in
+        let shifted =
+          bv_op_function BVOps.BVLShr [ concat_expr; shift_amt ]
+            { shape with args = [ width + width; width ] }
+        in
+
+        let ext_lits = Some [ width - 1; 0 ] in
+        let result =
+          bv_op_function ?literals:ext_lits BVOps.BVExtract [ shifted ]
+            { shape with args = [ width ] }
+        in
+        return result
+    | _ -> failwith "Invalid number of arguments"
+
+  let bswap_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x ] ->
+        let width = shape.width_of_result |> Option.get in
+
+        if width mod 16 <> 0 then
+          failwith "bswap requires an even number of bytes"
+        else
+          let num_bytes = width / 8 in
+
+          let rec extract_bytes extracted byte_idx =
+            if byte_idx >= num_bytes then extracted
+            else
+              let high_bit = ((byte_idx + 1) * 8) - 1 in
+              let low_bit = byte_idx * 8 in
+              let lits = Some [ high_bit; low_bit ] in
+              let byte_expr =
+                bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                  { shape with args = [ width ] }
+              in
+              extract_bytes (extracted @ [ byte_expr ]) (byte_idx + 1)
+          in
+
+          let reversed_bytes = extract_bytes [] 0 in
+
+          let rec concat_bytes = function
+            | [] -> failwith "Empty byte list"
+            | [ byte ] -> byte
+            | byte :: rest ->
+                let rest_result = concat_bytes rest in
+                let rest_width = List.length rest * 8 in
+                bv_op_function BVOps.BVConcat [ byte; rest_result ]
+                  { shape with args = [ 8; rest_width ] }
+          in
+
+          let result = concat_bytes reversed_bytes in
+          return result
+    | _ -> failwith "Invalid number of arguments"
+
+  let ctpop_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x ] ->
+        let width = shape.width_of_result |> Option.get in
+
+        (* Divide and conquer population count *)
+        let rec popcount_dc start_idx end_idx =
+          let current_width = end_idx - start_idx + 1 in
+          if current_width = 1 then
+            (* Base case: single bit - extract and zero-extend to target width *)
+            let lits = Some [ start_idx; start_idx ] in
+            let bit =
+              bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                { shape with args = [ width ] }
+            in
+            let lits_ext = Some [ width ] in
+            bv_op_function ?literals:lits_ext BVOps.BVZeroExtend [ bit ]
+              { shape with args = [ 1 ] }
+          else
+            (* Divide: split into two halves *)
+            let half_width = current_width / 2 in
+            let mid_idx = start_idx + half_width - 1 in
+
+            (* Conquer: recursively compute population count for each half *)
+            let upper_count = popcount_dc (mid_idx + 1) end_idx in
+            let lower_count = popcount_dc start_idx mid_idx in
+
+            (* Combine: add the results from both halves *)
+            (* Both results should already be of width 'width' *)
+            let sum =
+              bv_op_function BVOps.BVPlus
+                [ upper_count; lower_count ]
+                { shape with args = [ width; width ] }
+            in
+            (* Truncate the result back to target width (in case of carry) *)
+            let lits = Some [ width - 1; 0 ] in
+            bv_op_function ?literals:lits BVOps.BVExtract [ sum ]
+              { shape with args = [ width + 1 ] }
+        in
+
+        let count_result = popcount_dc 0 (width - 1) in
+        return count_result
+    | _ -> failwith "Invalid number of arguments"
+
   let uitofp_function inputs shape =
     let open Gil_syntax in
     Expr.UnOp (UnOp.IntToNum, bv_op_function BVOps.BVToInt inputs shape)
@@ -1030,6 +1285,20 @@ module OpFunctions = struct
           shape
     | None -> failwith "Fptosi function requires a result width"
 
+  let bitcast_fp_to_bv_function inputs shape =
+    let open Gil_syntax in
+    match shape.width_of_result with
+    | Some width ->
+        let lits = Some [ width ] in
+        bv_op_function ?literals:lits BVOps.NumToIEEEBV [ List.hd inputs ] shape
+    | None -> failwith "bitcast function requires a result width"
+
+  let bitcast_bv_to_fp_function inputs shape =
+    let open Gil_syntax in
+    match shape.width_of_result with
+    | Some width -> bv_op_function BVOps.IEEEBVToNum [ List.hd inputs ] shape
+    | None -> failwith "bitcast function requires a result width"
+
   let sub_function_overflow
       (op : BVOps.t)
       (inputs : Expr.t list)
@@ -1047,10 +1316,53 @@ module OpFunctions = struct
         bv_op_function BVOps.BVPlus [ neg_function [ y ] first_shape; x ] shape
     | _ -> failwith "Invalid number of arguments"
 
+  let fp_add_function = fp_op_pred BinOp.FPlus
   let fp_sub_function = fp_op_pred BinOp.FMinus
   let fp_mul_function = fp_op_pred BinOp.FTimes
   let fp_div_function = fp_op_pred BinOp.FDiv
   let fp_abs_function = fp_unop_pred UnOp.M_abs
+  let fp_neg_function = fp_unop_pred UnOp.FUnaryMinus
+  let fp_ceil_function = fp_unop_pred UnOp.M_ceil
+  let fp_floor_function = fp_unop_pred UnOp.M_floor
+
+  let extract_value_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        (* Use shift and extract since extract requires a literal index *)
+        let res_width = shape.width_of_result |> Option.get in
+        let x_width = List.hd shape.args in
+        let y_width = List.nth shape.args 1 in
+
+        (* Shift amount = x_width - (y + res_width) *)
+        let res_width_bv =
+          Expr.Lit (Literal.LBitvector (Z.of_int res_width, y_width))
+        in
+        let last_index =
+          bv_op_function BVOps.BVPlus [ y; res_width_bv ]
+            { shape with args = [ y_width; y_width ] }
+        in
+        let x_width_bv =
+          Expr.Lit (Literal.LBitvector (Z.of_int x_width, x_width))
+        in
+        let shift_amount =
+          bv_op_function BVOps.BVSub [ x_width_bv; last_index ]
+            { shape with args = [ x_width; y_width ] }
+        in
+        let shifted =
+          bv_op_function BVOps.BVLShr [ x; shift_amount ]
+            { shape with args = [ x_width; y_width ] }
+        in
+
+        let high_index = res_width - 1 in
+        let lits = Some [ high_index; 0 ] in
+        let result =
+          bv_op_function ?literals:lits BVOps.BVExtract [ shifted ]
+            { shape with args = [ x_width ] }
+        in
+        return result
+    | _ -> failwith "Invalid number of arguments"
 end
 
 let template_from_pattern_unary
@@ -1065,6 +1377,21 @@ let template_from_pattern_unary
         | [ x ] -> pattern_function_unary x shape op
         | _ -> failwith "Invalid number of arguments")
   | _ -> op_function name 1 (fun xs -> op_bv_scheme xs op flag_checks shape)
+
+let template_from_pattern_ternary
+    ~(op : bv_op_function)
+    ~(commutative : bool)
+    ~(pointer_width : int)
+    ~(flag_checks : bv_op_function list option)
+    (name : string)
+    (shape : bv_op_shape) =
+  match List.nth_opt shape.args 0 with
+  | Some width when width = pointer_width ->
+      op_function name 3 (function
+        | [ x; y; z ] ->
+            pattern_function_ternary x y z shape op commutative flag_checks
+        | _ -> failwith "Invalid number of arguments")
+  | _ -> op_function name 3 (fun xs -> op_bv_scheme xs op flag_checks shape)
 
 let template_from_pattern
     ~(op : bv_op_function)
@@ -1110,6 +1437,18 @@ let template_from_pattern_fp_unary
     | [ x ] -> fp_patterns_unary ~pointer_width x op shape flag_checks
     | _ -> failwith "Invalid number of arguments")
 
+let template_from_pattern_fp_ternary
+    ~(op1 : bv_op_function)
+    ~(op2 : bv_op_function)
+    ~(pointer_width : int)
+    ~(flag_checks : bv_op_function list option)
+    (name : string)
+    (shape : bv_op_shape) =
+  op_function name 3 (function
+    | [ x; y; z ] ->
+        fp_patterns_ternary ~pointer_width x y z op1 op2 shape flag_checks
+    | _ -> failwith "Invalid number of arguments")
+
 let template_from_pattern_fp_ext
     ~(pointer_width : int)
     ~(flag_checks : bv_op_function list option)
@@ -1152,6 +1491,9 @@ module MemoryLib = struct
   let alloc_name = "alloc"
   let store_name = "store"
   let load_name = "load"
+  let memset_name = "memset"
+  let memcpy_name = "move"
+  let memmove_name = "move"
 
   module M = Memories.LLVM_ALoc.MonadicSMemory
 
@@ -1312,6 +1654,167 @@ module MemoryLib = struct
         return ()
     | _ -> failwith "Invalid number of arguments"
 
+  let memset_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Expr.Infix in
+    match exp_list with
+    | [ ptr; value; size ] ->
+        let type_checks =
+          [
+            is_type_of_expr ptr LLVMRuntimeTypes.Ptr;
+            is_type_of_expr value (LLVMRuntimeTypes.Int 8);
+            is_type_of_expr size (LLVMRuntimeTypes.Int pointer_width);
+          ]
+        in
+        let ty_check =
+          List.fold_left (fun acc check -> acc && check) Expr.true_ type_checks
+        in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base; offset } = access_ptr ptr in
+               let byte_value = Expr.list_nth value 1 in
+               let byte_count = Expr.list_nth size 1 in
+               pointer_op
+                 ~is_ptr_case:(fun bindr ->
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          ( bindr,
+                            memset_name,
+                            [ base; offset; byte_value; byte_count ] ))
+                   in
+                   return ())
+                 ptr)
+            ~false_case:
+              (let* _ =
+                 add_cmd (fail_cmd "Memset_type_error" [ ptr; value; size ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments"
+
+  let memcpy_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Expr.Infix in
+    match exp_list with
+    | [ dst; src; len ] ->
+        let type_checks =
+          [
+            is_type_of_expr dst LLVMRuntimeTypes.Ptr;
+            is_type_of_expr src LLVMRuntimeTypes.Ptr;
+            is_type_of_expr len (LLVMRuntimeTypes.Int pointer_width);
+          ]
+        in
+        let ty_check =
+          List.fold_left (fun acc check -> acc && check) Expr.true_ type_checks
+        in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base = dst_base; offset = dst_offset } = access_ptr dst in
+               let { base = src_base; offset = src_offset } = access_ptr src in
+               let byte_count = Expr.list_nth len 1 in
+               pointer_op
+                 ~is_ptr_case:(fun bindr ->
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          ( bindr,
+                            memcpy_name,
+                            [
+                              dst_base;
+                              dst_offset;
+                              src_base;
+                              src_offset;
+                              byte_count;
+                            ] ))
+                   in
+                   return ())
+                 dst)
+            ~false_case:
+              (let* _ =
+                 add_cmd (fail_cmd "Memcpy_type_error" [ dst; src; len ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments"
+
+  let memmove_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Expr.Infix in
+    match exp_list with
+    | [ dst; src; len ] ->
+        let type_checks =
+          [
+            is_type_of_expr dst LLVMRuntimeTypes.Ptr;
+            is_type_of_expr src LLVMRuntimeTypes.Ptr;
+            is_type_of_expr len (LLVMRuntimeTypes.Int pointer_width);
+          ]
+        in
+        let ty_check =
+          List.fold_left (fun acc check -> acc && check) Expr.true_ type_checks
+        in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base = dst_base; offset = dst_offset } = access_ptr dst in
+               let { base = src_base; offset = src_offset } = access_ptr src in
+               let byte_count = Expr.list_nth len 1 in
+               pointer_op
+                 ~is_ptr_case:(fun bindr ->
+                   let temp_buf_sym = fresh_sym () in
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          ( temp_buf_sym,
+                            alloc_name,
+                            [ Expr.zero_bv pointer_width; byte_count ] ))
+                   in
+                   let temp_base = Expr.list_nth (Expr.PVar temp_buf_sym) 0 in
+                   let temp_offset = Expr.zero_bv pointer_width in
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          ( bindr,
+                            memcpy_name,
+                            [
+                              temp_base;
+                              temp_offset;
+                              src_base;
+                              src_offset;
+                              byte_count;
+                            ] ))
+                   in
+                   let* _ =
+                     add_cmd
+                       (Cmd.LAction
+                          ( bindr,
+                            memcpy_name,
+                            [
+                              dst_base;
+                              dst_offset;
+                              temp_base;
+                              temp_offset;
+                              byte_count;
+                            ] ))
+                   in
+                   return ())
+                 dst)
+            ~false_case:
+              (let* _ =
+                 add_cmd (fail_cmd "Memmove_type_error" [ dst; src; len ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments"
+
   let construct_simple_op
       ~(arity : int)
       ~(f : pointer_width:int -> Expr.t list -> unit Codegenerator.t)
@@ -1338,8 +1841,101 @@ module MemoryLib = struct
         name = "llvm_alloca";
         generator = SimpleOp (construct_simple_op ~arity:2 ~f:alloc_op);
       };
+      {
+        name = "llvm_memset";
+        generator = SimpleOp (construct_simple_op ~arity:3 ~f:memset_op);
+      };
+      {
+        name = "llvm_memcpy";
+        generator = SimpleOp (construct_simple_op ~arity:3 ~f:memcpy_op);
+      };
+      {
+        name = "llvm_memmove";
+        generator = SimpleOp (construct_simple_op ~arity:3 ~f:memmove_op);
+      };
     ]
 end
+
+let cmpxchg_op (exprs : Expr.t list) (shape : bv_op_shape) :
+    Expr.t Codegenerator.t =
+  let open Codegenerator in
+  match exprs with
+  | [ ptr; y; z ] ->
+      let value_width = List.nth shape.args 1 in
+      let chunk = Chunk.IntegerChunk value_width in
+      let chunk_expr = Expr.string (Chunk.to_string chunk) in
+      let ptr_struct = MemoryLib.access_ptr ptr in
+      let base = ptr_struct.MemoryLib.base in
+      let offset = ptr_struct.MemoryLib.offset in
+      let result_var = fresh_sym () in
+      let tmp = fresh_sym () in
+      let success_label = fresh_sym () in
+      let failure_label = fresh_sym () in
+      let join_label = fresh_sym () in
+
+      (* Load the current value *)
+      let* _ =
+        add_cmd
+          (Cmd.LAction (tmp, MemoryLib.load_name, [ chunk_expr; base; offset ]))
+      in
+      let current_value = Expr.list_nth (Expr.PVar tmp) 0 in
+
+      let bexpr =
+        Expr.BVExprIntrinsic
+          ( BVOps.BVUleq,
+            [ BvExpr (current_value, value_width); BvExpr (y, value_width) ],
+            None )
+      in
+      let bexpr2 =
+        Expr.BVExprIntrinsic
+          ( BVOps.BVUleq,
+            [ BvExpr (y, value_width); BvExpr (current_value, value_width) ],
+            None )
+      in
+      let bexpr_final = Expr.BinOp (bexpr, BinOp.And, bexpr2) in
+      let* _ =
+        add_cmd (Cmd.GuardedGoto (bexpr_final, success_label, failure_label))
+      in
+
+      (* Success case: store the new value and set success flag *)
+      let* _ = new_block success_label in
+      let store_result = fresh_sym () in
+      let typed_z = Expr.EList [ chunk_expr; z ] in
+      let* _ =
+        add_cmd
+          (Cmd.LAction
+             ( store_result,
+               MemoryLib.store_name,
+               [ chunk_expr; base; offset; typed_z ] ))
+      in
+      let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+      let concat_shape =
+        { args = [ value_width; 1 ]; width_of_result = Some (value_width + 1) }
+      in
+      let result =
+        OpFunctions.bv_op_function BVOps.BVConcat [ current_value; one ]
+          concat_shape
+      in
+      let* _ = add_cmd (Cmd.Assignment (result_var, result)) in
+      let* _ = add_cmd (Cmd.Goto join_label) in
+
+      (* Failure case: don't store, set failure flag *)
+      let* _ = new_block failure_label in
+      let zero = Expr.zero_bv 1 in
+      let concat_shape =
+        { args = [ value_width; 1 ]; width_of_result = Some (value_width + 1) }
+      in
+      let result =
+        OpFunctions.bv_op_function BVOps.BVConcat [ current_value; zero ]
+          concat_shape
+      in
+      let* _ = add_cmd (Cmd.Assignment (result_var, result)) in
+      let* _ = add_cmd (Cmd.Goto join_label) in
+
+      (* Join point: return the result *)
+      let* _ = new_block join_label in
+      return (Expr.PVar result_var)
+  | _ -> failwith "Invalid number of arguments"
 
 (*
 TODO(Ian): there's probably a nice way to make a product functor that
@@ -1350,6 +1946,9 @@ module Libc = struct
   let libc_prefix = "libc_"
   let libc_mul_name = libc_prefix ^ "bvmul_sizet"
   let libc_alloca_name = libc_prefix ^ "_llvm_alloca"
+  let libc_memset_name = "llvm_memset"
+  let libc_memcpy_name = "llvm_memcpy"
+  let libc_memmove_name = "llvm_memmove"
 
   let libc_dependencies ~(pointer_width : int) =
     [
@@ -1376,6 +1975,21 @@ module Libc = struct
       { name = "calloc"; output_name = "calloc"; spec = SimpleSpec };
       { name = "exit"; output_name = "exit"; spec = SimpleSpec };
       { name = "getchar"; output_name = "getchar"; spec = SimpleSpec };
+      {
+        name = "llvm_memset";
+        output_name = libc_memset_name;
+        spec = SimpleSpec;
+      };
+      {
+        name = "llvm_memcpy";
+        output_name = libc_memcpy_name;
+        spec = SimpleSpec;
+      };
+      {
+        name = "llvm_memmove";
+        output_name = libc_memmove_name;
+        spec = SimpleSpec;
+      };
     ]
 
   let constant_return_func
@@ -1618,6 +2232,87 @@ module UtilityOps = struct
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
+  let umax_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVUlt, [ BvExpr (x, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, y)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, x)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let smin_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (x, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, x)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, y)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let smax_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (x, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, y)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, x)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let select_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
       Expr.t Codegenerator.t =
     let open Codegenerator in
@@ -1642,6 +2337,65 @@ module UtilityOps = struct
                return ())
         in
         let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let create_symbolic_int_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let* _ = add_cmd (Cmd.Logic (LCmd.FreshSVar bindr)) in
+        let* _ =
+          add_cmd
+            (Cmd.Logic
+               (LCmd.AssumeType
+                  ( Expr.PVar bindr,
+                    LLVMRuntimeTypes.rtype_to_gil_type
+                      (LLVMRuntimeTypes.Int width) )))
+        in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let create_symbolic_float_function (exprs : Expr.t list) (shape : bv_op_shape)
+      : Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [] ->
+        let width = shape.width_of_result |> Option.get in
+        let rtype =
+          match width with
+          | 32 -> LLVMRuntimeTypes.F32
+          | 64 -> LLVMRuntimeTypes.F64
+          | _ -> failwith "Invalid width"
+        in
+        let bindr = fresh_sym () in
+        let* _ = add_cmd (Cmd.Logic (LCmd.FreshSVar bindr)) in
+        let* _ =
+          add_cmd
+            (Cmd.Logic
+               (LCmd.AssumeType
+                  (Expr.PVar bindr, LLVMRuntimeTypes.rtype_to_gil_type rtype)))
+        in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let create_symbolic_ptr_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [] ->
+        let bindr = fresh_sym () in
+        let* _ = add_cmd (Cmd.Logic (LCmd.FreshSVar bindr)) in
+        let* _ =
+          add_cmd
+            (Cmd.Logic
+               (LCmd.AssumeType
+                  ( Expr.PVar bindr,
+                    LLVMRuntimeTypes.rtype_to_gil_type LLVMRuntimeTypes.Ptr )))
+        in
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
@@ -1677,6 +2431,50 @@ module UtilityOps = struct
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
+  let uaddsat_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one width)) width in
+
+        (* Check if x + y would overflow by checking if x > max_val - y *)
+        let max_minus_y =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVSub,
+              [ BvExpr (max_val, width); BvExpr (y, width) ],
+              Some width )
+        in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVUlt,
+              [ BvExpr (max_minus_y, width); BvExpr (x, width) ],
+              None )
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, max_val)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (let* _ = add_cmd (Cmd.Assignment (bindr, add_expr)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let generic_template_function
       ~(op : generalized_bv_op_function)
       ~(pointer_width : int)
@@ -1686,6 +2484,63 @@ module UtilityOps = struct
     op_function name (List.length shape.args) (fun exp_list ->
         generalized_op_bv_scheme exp_list op flag_checks shape)
 end
+
+(* Custom template function for cmpxchg that treats the first argument as a pointer *)
+let cmpxchg_template_function
+    ~(pointer_width : int)
+    ~(flag_checks : bv_op_function list option)
+    (name : string)
+    (shape : bv_op_shape) =
+  (* For cmpxchg, we override the normal template behavior to treat the first argument as a pointer *)
+  op_function name (List.length shape.args) (fun exp_list ->
+      match exp_list with
+      | [ ptr; y; z ] ->
+          let open Codegenerator in
+          let value_width = List.nth shape.args 1 in
+          let result_width = value_width + 1 in
+          let open Gil_syntax.Expr in
+          let open Gil_syntax.Expr.Infix in
+          (* Custom type checking for cmpxchg: first arg is Ptr, others are Int *)
+          let ptr_type_check = is_type_of_expr ptr LLVMRuntimeTypes.Ptr in
+          let y_type_check =
+            is_type_of_expr y (LLVMRuntimeTypes.Int value_width)
+          in
+          let z_type_check =
+            is_type_of_expr z (LLVMRuntimeTypes.Int value_width)
+          in
+          let check = ptr_type_check && y_type_check && z_type_check in
+          let result_type = Expr.string ("i-" ^ string_of_int result_width) in
+          let* _ =
+            ite check
+              ~true_case:
+                (* Create a corrected shape for cmpxchg_op where the first argument is the pointer width *)
+                (let corrected_shape =
+                   { shape with args = pointer_width :: List.tl shape.args }
+                 in
+                 (* Extract bitvectors from typed values *)
+                 let y_bv = Expr.list_nth y 1 in
+                 let z_bv = Expr.list_nth z 1 in
+                 (* Call cmpxchg_op with raw bitvectors *)
+                 let* res_bv = cmpxchg_op [ ptr; y_bv; z_bv ] corrected_shape in
+                 (* Wrap result in typed structure *)
+                 let res = Expr.EList [ result_type; res_bv ] in
+                 let* _ = add_return_of_value res in
+                 return get_current_block_label)
+              ~false_case:
+                (let* _ =
+                   add_cmd
+                     (type_fail
+                        [
+                          (ptr, LLVMRuntimeTypes.Ptr);
+                          (y, LLVMRuntimeTypes.Int value_width);
+                          (z, LLVMRuntimeTypes.Int value_width);
+                        ])
+                 in
+                 let* _ = add_cmd Gil_syntax.Cmd.ReturnNormal in
+                 return get_current_block_label)
+          in
+          return ()
+      | _ -> failwith "cmpxchg requires exactly 3 arguments")
 
 module LLVMTemplates : Monomorphizer.OpTemplates = struct
   open Monomorphizer
@@ -1743,6 +2598,33 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "bvumax";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.umax_op_function)
+               []);
+      };
+      {
+        name = "bvsmin";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.smin_op_function)
+               []);
+      };
+      {
+        name = "bvsmax";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.smax_op_function)
+               []);
+      };
+      {
         name = "select";
         generator =
           ValueOp
@@ -1752,12 +2634,57 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "create_symbolic_int";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.create_symbolic_int_function)
+               []);
+      };
+      {
+        name = "create_symbolic_float";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.create_symbolic_float_function)
+               []);
+      };
+      {
+        name = "create_symbolic_ptr";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.create_symbolic_ptr_function)
+               []);
+      };
+      {
+        name = "extractvalue";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.extract_value_function)
+               []);
+      };
+      {
         name = "usubsat";
         generator =
           ValueOp
             (flag_template_function
                (UtilityOps.generic_template_function
                   ~op:UtilityOps.usubsat_op_function)
+               []);
+      };
+      {
+        name = "uaddsat";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.uaddsat_op_function)
                []);
       };
       {
@@ -1793,6 +2720,14 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
           ValueOp
             (flag_template_function
                (template_from_integer_op ~op:OpFunctions.lshr_op_function)
+               []);
+      };
+      {
+        name = "bvashr";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_integer_op ~op:OpFunctions.ashr_op_function)
                []);
       };
       {
@@ -1877,6 +2812,47 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "bvfshl";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.fshl_function)
+               []);
+      };
+      {
+        name = "bvfshr";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.fshr_function)
+               []);
+      };
+      {
+        name = "bswap";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.bswap_function)
+               []);
+      };
+      {
+        name = "ctpop";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.ctpop_function)
+               []);
+      };
+      {
+        name = "cmpxchg";
+        generator =
+          ValueOp (flag_template_function cmpxchg_template_function []);
+      };
+      {
         name = "sitofp";
         generator =
           ValueOp
@@ -1911,6 +2887,34 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        (* TODO: Use a template that performs correct type checking *)
+        name = "bitcast_fp_to_bv";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_conversion
+                  ~op:OpFunctions.bitcast_fp_to_bv_function)
+               []);
+      };
+      {
+        (* TODO: Use a template that performs correct type checking *)
+        name = "bitcast_bv_to_fp";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_conversion
+                  ~op:OpFunctions.bitcast_bv_to_fp_function)
+               []);
+      };
+      {
+        name = "fpadd";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp ~op:OpFunctions.fp_add_function)
+               []);
+      };
+      {
         name = "fpsub";
         generator =
           ValueOp
@@ -1940,6 +2944,40 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
           ValueOp
             (flag_template_function
                (template_from_pattern_fp_unary ~op:OpFunctions.fp_abs_function)
+               []);
+      };
+      {
+        name = "fpneg";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_unary ~op:OpFunctions.fp_neg_function)
+               []);
+      };
+      {
+        name = "fpceil";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_unary ~op:OpFunctions.fp_ceil_function)
+               []);
+      };
+      {
+        name = "fpfloor";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_unary ~op:OpFunctions.fp_floor_function)
+               []);
+      };
+      {
+        name = "fpmuladd";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_ternary
+                  ~op1:OpFunctions.fp_mul_function
+                  ~op2:OpFunctions.fp_add_function)
                []);
       };
       {

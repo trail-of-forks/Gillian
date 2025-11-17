@@ -30,6 +30,8 @@ type t = TypeDef__.bvop =
   | BVSAddO
   | BVToInt
   | IntToBV
+  | IEEEBVToNum
+  | NumToIEEEBV
 [@@deriving eq, ord]
 
 let str (x : t) =
@@ -65,6 +67,8 @@ let str (x : t) =
   | BVSAddO -> "bvsaddo"
   | BVToInt -> "bvtoint"
   | IntToBV -> "inttobv"
+  | IEEEBVToNum -> "ieeebvtonum"
+  | NumToIEEEBV -> "numtoieeebv"
 
 let to_yojson = TypeDef__.bvop_to_yojson
 let of_yojson = TypeDef__.bvop_of_yojson

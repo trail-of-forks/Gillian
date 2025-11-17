@@ -500,7 +500,52 @@ module SVArray = struct
 
   let reencode ~chunk arr : t Delayed.t =
     if Chunk.equal chunk arr.chunk then Delayed.return arr
-    else failwith "unimplemented: decoding an array as another one"
+    else
+      (* Re-encode array to different chunk size *)
+      match (Chunk.to_components arr.chunk, Chunk.to_components chunk) with
+      | Int { bit_width = from_width }, Int { bit_width = to_width } ->
+          if from_width > to_width && from_width mod to_width = 0 then
+            (* Split larger chunks into smaller ones (e.g., i-64 into i-8 bytes) *)
+            let num_small_per_large = from_width / to_width in
+            let arr_len =
+              match Expr.list_length arr.values with
+              | Expr.Lit (Int n) -> Z.to_int n
+              | _ -> failwith "Cannot determine array length"
+            in
+            let all_small_chunks =
+              List.init arr_len (fun elem_idx ->
+                  let elem = Expr.list_nth arr.values elem_idx in
+                  List.init num_small_per_large (fun i ->
+                      let high_bit = ((i + 1) * to_width) - 1 in
+                      let low_bit = i * to_width in
+                      Expr.bv_extract high_bit low_bit elem))
+              |> List.flatten
+            in
+            Delayed.return { chunk; values = Expr.list all_small_chunks }
+          else if from_width < to_width && to_width mod from_width = 0 then
+            (* Combine smaller chunks into larger ones *)
+            let num_small_per_large = to_width / from_width in
+            let arr_len =
+              match Expr.list_length arr.values with
+              | Expr.Lit (Int n) -> Z.to_int n
+              | _ -> failwith "Cannot determine array length"
+            in
+            if arr_len mod num_small_per_large <> 0 then
+              failwith "Array length not compatible with target chunk size"
+            else
+              let num_large = arr_len / num_small_per_large in
+              let large_chunks =
+                List.init num_large (fun i ->
+                    let small_elems =
+                      List.init num_small_per_large (fun j ->
+                          Expr.list_nth arr.values
+                            ((i * num_small_per_large) + j))
+                    in
+                    Expr.bv_concat small_elems)
+              in
+              Delayed.return { chunk; values = Expr.list large_chunks }
+          else failwith "Cannot reencode: incompatible chunk sizes"
+      | _ -> failwith "Cannot reencode: unsupported chunk type conversion"
 
   let array_sub ~arr ~start ~size : t =
     let e = Expr.list_sub ~lst:arr.values ~start ~size in
@@ -532,7 +577,10 @@ module SVArray = struct
     in
     if%ent can_keep_chunk then
       Delayed.return (split_at_offset ~at:(Expr.bv_udiv at chunk_size) arr)
-    else failwith "Unhandled: split_at_byte that doesn't preserve chunk"
+    else
+      (* Split doesn't align with chunk boundary - re-encode as byte array *)
+      let* byte_arr = reencode ~chunk:Chunk.i8 arr in
+      Delayed.return (split_at_offset ~at byte_arr)
 
   (* let split_array_in ~size ~amount arr =
      let i f = Expr.int f in
