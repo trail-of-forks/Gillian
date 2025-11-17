@@ -14,7 +14,6 @@ type mem_ac =
   | GetArray
   | GetBounds
   | Memset
-  | Memcpy
 
 type genv_ac = GetSymbol | SetSymbol | GetDef | SetDef
 

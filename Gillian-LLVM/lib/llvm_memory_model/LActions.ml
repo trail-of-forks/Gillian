@@ -1,12 +1,4 @@
-type ac =
-  | DropPerm
-  | GetCurPerm
-  | WeakValidPointer
-  | Store
-  | Load
-  | Memset
-  | Memcpy
-
+type ac = DropPerm | GetCurPerm | WeakValidPointer | Store | Load | Memset
 type ga = Single | Array | Hole | Zeros | Bounds
 
 let str_ac = function
@@ -16,7 +8,6 @@ let str_ac = function
   | Store -> "store"
   | Load -> "load"
   | Memset -> "memset"
-  | Memcpy -> "memcpy"
 
 let ac_from_str = function
   | "dropperm" -> DropPerm
@@ -25,7 +16,6 @@ let ac_from_str = function
   | "store" -> Store
   | "load" -> Load
   | "memset" -> Memset
-  | "memcpy" -> Memcpy
   | _ -> failwith "Unrecognized action"
 
 let str_ga = function

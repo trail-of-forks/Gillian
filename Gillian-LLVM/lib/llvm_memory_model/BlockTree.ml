@@ -28,7 +28,6 @@ module M = struct
       (Store, [ "?" ], [ "?" ]);
       (Load, [ "?" ], [ "?" ]);
       (Memset, [ "?" ], [ "?" ]);
-      (Memcpy, [ "?" ], [ "?" ]);
     ]
 
   let list_preds _ =
@@ -86,9 +85,6 @@ module M = struct
         Ok (s', [ gil_value ])
     | Memset, [ ofs; value; size ] ->
         let++ s' = memset s ofs value size in
-        (s', [])
-    | Memcpy, [ dst; src; len ] ->
-        let++ s' = memcpy s dst src len in
         (s', [])
     | _, _ -> fail_ungracefully (action_to_str act) ins
 
@@ -281,9 +277,6 @@ module M = struct
 
   let memset (tree : t) (ofs : Expr.t) (value : Expr.t) (size : Expr.t) =
     SHeapTree.memset tree ofs value size
-
-  let memcpy (tree : t) (dst : Expr.t) (src : Expr.t) (size : Expr.t) =
-    SHeapTree.memcpy tree dst src size
 
   (** Pretty print the state *)
   let pp fmt tree = SHeapTree.pp_full fmt tree

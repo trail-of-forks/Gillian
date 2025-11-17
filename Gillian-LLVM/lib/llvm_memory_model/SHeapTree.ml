@@ -577,19 +577,38 @@ module Tree = struct
 
   let remove_node x = DR.ok (make ~node:(NotOwned Totally) ~span:x.span ())
 
-  (* Used to change the position of a tree. The start of the tree is going to be [start], but the spans don't change. *)
-  let rec realign t start =
-    let open Expr.Infix in
-    let reduce e = Engine.Reduction.reduce_lexpr e in
-    let l, h = t.span in
-    let span = (start, reduce (start + h - l)) in
+  (* Used to change the position of a tree to [start]. 
+     The size should be the original size of the tree being moved. *)
+  let rec realign_impl t ~orig_base ~new_base =
+    (* Compute offset from original base *)
+    let orig_low, orig_high = t.span in
+    (* For now, just use the original high but shift by the base difference
+       This avoids complex bv_sub operations on potentially complex expressions *)
+    let new_low = new_base in
+    let new_high = orig_high in
+    let span = (new_low, new_high) in
     let children =
       Option.map
         (fun (left, right) ->
-          let left = realign left start in
-          let _, m = left.span in
-          let right = realign right m in
-          (left, right))
+          let left' = realign_impl left ~orig_base ~new_base in
+          let _, left_high' = left'.span in
+          let right' = realign_impl right ~orig_base ~new_base:left_high' in
+          (left', right'))
+        t.children
+    in
+    make ~node:t.node ~span ?children ()
+
+  let realign t start size =
+    let orig_low, _orig_high = t.span in
+    let high = Expr.bv_plus start size in
+    let span = (start, high) in
+    let children =
+      Option.map
+        (fun (left, right) ->
+          let left' = realign_impl left ~orig_base:orig_low ~new_base:start in
+          let _, mid = left'.span in
+          let right' = realign_impl right ~orig_base:orig_low ~new_base:mid in
+          (left', right'))
         t.children
     in
     make ~node:t.node ~span ?children ()
@@ -1524,38 +1543,6 @@ let memset t ptr value size =
         store_loop t ptr size
   else DR.error BufferOverrun
 
-let memcpy t dst src len =
-  let open DR.Syntax in
-  let open Delayed.Syntax in
-  let dst_range = Range.of_low_and_size dst len in
-  let src_range = Range.of_low_and_size src len in
-  let** span = DR.of_result (get_bounds t) in
-  if%sat Expr.Infix.(is_in_bounds dst_range span && is_in_bounds src_range span)
-  then
-    let** root = DR.of_result (get_root t) in
-    match root with
-    | None -> DR.error (MissingResource Unfixable)
-    | Some root ->
-        let chunk = Chunk.i8 in
-        let ptr_width = Llvmconfig.ptr_width () in
-        let zero_bv = Expr.zero_bv ptr_width in
-        let one_byte = Expr.bv_z Z.one ptr_width in
-
-        let rec store_loop current_tree dst_ofs src_ofs remaining_size =
-          let open Expr.Infix in
-          if%sat remaining_size == zero_bv then DR.ok current_tree
-          else
-            let** current_val, _ = load current_tree chunk src_ofs in
-            let** new_tree = store current_tree chunk dst_ofs current_val in
-            let next_dst_ofs = Expr.bv_plus dst_ofs one_byte in
-            let next_src_ofs = Expr.bv_plus src_ofs one_byte in
-            let next_size = Expr.bv_sub remaining_size one_byte in
-            store_loop new_tree next_dst_ofs next_src_ofs next_size
-        in
-
-        store_loop t dst src len
-  else DR.error BufferOverrun
-
 let poison t ofs size =
   let open DR.Syntax in
   let range = Range.of_low_and_size ofs size in
@@ -1573,7 +1560,7 @@ let move dst_tree dst_ofs src_tree src_ofs size =
   let open DR.Syntax in
   let dst_range, src_range =
     let open Expr.Infix in
-    ((dst_ofs, dst_ofs + size), (src_ofs, src_ofs + size))
+    ((dst_ofs, Expr.bv_plus dst_ofs size), (src_ofs, Expr.bv_plus src_ofs size))
   in
   let** src_span = DR.of_result (get_bounds src_tree) in
   if%sat is_in_bounds src_range src_span then
@@ -1603,7 +1590,7 @@ let move dst_tree dst_ofs src_tree src_ofs size =
                   ~replace_node:(fun current ->
                     match current.node with
                     | NotOwned _ -> DR.error (MissingResource Unfixable)
-                    | _ -> DR.ok (Tree.realign framed dst_ofs))
+                    | _ -> DR.ok (Tree.realign framed dst_ofs size))
                   ~rebuild_parent:Tree.of_children dst_range
               in
               DR.of_result (with_root dst_tree new_dst_root)

@@ -1492,8 +1492,8 @@ module MemoryLib = struct
   let store_name = "store"
   let load_name = "load"
   let memset_name = "memset"
-  let memcpy_name = "memcpy"
-  let memmove_name = "memmove"
+  let memcpy_name = "move"
+  let memmove_name = "move"
 
   module M = Memories.LLVM_ALoc.MonadicSMemory
 
@@ -1776,10 +1776,8 @@ module MemoryLib = struct
                             alloc_name,
                             [ Expr.zero_bv pointer_width; byte_count ] ))
                    in
-                   let temp_buf = Expr.PVar temp_buf_sym in
-                   let { base = temp_base; offset = temp_offset } =
-                     access_ptr temp_buf
-                   in
+                   let temp_base = Expr.list_nth (Expr.PVar temp_buf_sym) 0 in
+                   let temp_offset = Expr.zero_bv pointer_width in
                    let* _ =
                      add_cmd
                        (Cmd.LAction
@@ -1857,6 +1855,87 @@ module MemoryLib = struct
       };
     ]
 end
+
+let cmpxchg_op (exprs : Expr.t list) (shape : bv_op_shape) :
+    Expr.t Codegenerator.t =
+  let open Codegenerator in
+  match exprs with
+  | [ ptr; y; z ] ->
+      let value_width = List.nth shape.args 1 in
+      let chunk = Chunk.IntegerChunk value_width in
+      let chunk_expr = Expr.string (Chunk.to_string chunk) in
+      let ptr_struct = MemoryLib.access_ptr ptr in
+      let base = ptr_struct.MemoryLib.base in
+      let offset = ptr_struct.MemoryLib.offset in
+      let result_var = fresh_sym () in
+      let tmp = fresh_sym () in
+      let success_label = fresh_sym () in
+      let failure_label = fresh_sym () in
+      let join_label = fresh_sym () in
+
+      (* Load the current value *)
+      let* _ =
+        add_cmd
+          (Cmd.LAction (tmp, MemoryLib.load_name, [ chunk_expr; base; offset ]))
+      in
+      let current_value = Expr.list_nth (Expr.PVar tmp) 0 in
+
+      let bexpr =
+        Expr.BVExprIntrinsic
+          ( BVOps.BVUleq,
+            [ BvExpr (current_value, value_width); BvExpr (y, value_width) ],
+            None )
+      in
+      let bexpr2 =
+        Expr.BVExprIntrinsic
+          ( BVOps.BVUleq,
+            [ BvExpr (y, value_width); BvExpr (current_value, value_width) ],
+            None )
+      in
+      let bexpr_final = Expr.BinOp (bexpr, BinOp.And, bexpr2) in
+      let* _ =
+        add_cmd (Cmd.GuardedGoto (bexpr_final, success_label, failure_label))
+      in
+
+      (* Success case: store the new value and set success flag *)
+      let* _ = new_block success_label in
+      let store_result = fresh_sym () in
+      let typed_z = Expr.EList [ chunk_expr; z ] in
+      let* _ =
+        add_cmd
+          (Cmd.LAction
+             ( store_result,
+               MemoryLib.store_name,
+               [ chunk_expr; base; offset; typed_z ] ))
+      in
+      let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+      let concat_shape =
+        { args = [ value_width; 1 ]; width_of_result = Some (value_width + 1) }
+      in
+      let result =
+        OpFunctions.bv_op_function BVOps.BVConcat [ current_value; one ]
+          concat_shape
+      in
+      let* _ = add_cmd (Cmd.Assignment (result_var, result)) in
+      let* _ = add_cmd (Cmd.Goto join_label) in
+
+      (* Failure case: don't store, set failure flag *)
+      let* _ = new_block failure_label in
+      let zero = Expr.zero_bv 1 in
+      let concat_shape =
+        { args = [ value_width; 1 ]; width_of_result = Some (value_width + 1) }
+      in
+      let result =
+        OpFunctions.bv_op_function BVOps.BVConcat [ current_value; zero ]
+          concat_shape
+      in
+      let* _ = add_cmd (Cmd.Assignment (result_var, result)) in
+      let* _ = add_cmd (Cmd.Goto join_label) in
+
+      (* Join point: return the result *)
+      let* _ = new_block join_label in
+      return (Expr.PVar result_var)
+  | _ -> failwith "Invalid number of arguments"
 
 (*
 TODO(Ian): there's probably a nice way to make a product functor that
@@ -2406,6 +2485,63 @@ module UtilityOps = struct
         generalized_op_bv_scheme exp_list op flag_checks shape)
 end
 
+(* Custom template function for cmpxchg that treats the first argument as a pointer *)
+let cmpxchg_template_function
+    ~(pointer_width : int)
+    ~(flag_checks : bv_op_function list option)
+    (name : string)
+    (shape : bv_op_shape) =
+  (* For cmpxchg, we override the normal template behavior to treat the first argument as a pointer *)
+  op_function name (List.length shape.args) (fun exp_list ->
+      match exp_list with
+      | [ ptr; y; z ] ->
+          let open Codegenerator in
+          let value_width = List.nth shape.args 1 in
+          let result_width = value_width + 1 in
+          let open Gil_syntax.Expr in
+          let open Gil_syntax.Expr.Infix in
+          (* Custom type checking for cmpxchg: first arg is Ptr, others are Int *)
+          let ptr_type_check = is_type_of_expr ptr LLVMRuntimeTypes.Ptr in
+          let y_type_check =
+            is_type_of_expr y (LLVMRuntimeTypes.Int value_width)
+          in
+          let z_type_check =
+            is_type_of_expr z (LLVMRuntimeTypes.Int value_width)
+          in
+          let check = ptr_type_check && y_type_check && z_type_check in
+          let result_type = Expr.string ("i-" ^ string_of_int result_width) in
+          let* _ =
+            ite check
+              ~true_case:
+                (* Create a corrected shape for cmpxchg_op where the first argument is the pointer width *)
+                (let corrected_shape =
+                   { shape with args = pointer_width :: List.tl shape.args }
+                 in
+                 (* Extract bitvectors from typed values *)
+                 let y_bv = Expr.list_nth y 1 in
+                 let z_bv = Expr.list_nth z 1 in
+                 (* Call cmpxchg_op with raw bitvectors *)
+                 let* res_bv = cmpxchg_op [ ptr; y_bv; z_bv ] corrected_shape in
+                 (* Wrap result in typed structure *)
+                 let res = Expr.EList [ result_type; res_bv ] in
+                 let* _ = add_return_of_value res in
+                 return get_current_block_label)
+              ~false_case:
+                (let* _ =
+                   add_cmd
+                     (type_fail
+                        [
+                          (ptr, LLVMRuntimeTypes.Ptr);
+                          (y, LLVMRuntimeTypes.Int value_width);
+                          (z, LLVMRuntimeTypes.Int value_width);
+                        ])
+                 in
+                 let* _ = add_cmd Gil_syntax.Cmd.ReturnNormal in
+                 return get_current_block_label)
+          in
+          return ()
+      | _ -> failwith "cmpxchg requires exactly 3 arguments")
+
 module LLVMTemplates : Monomorphizer.OpTemplates = struct
   open Monomorphizer
   open Monomorphizer.Template
@@ -2710,6 +2846,11 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                (UtilityOps.generic_template_function
                   ~op:OpFunctions.ctpop_function)
                []);
+      };
+      {
+        name = "cmpxchg";
+        generator =
+          ValueOp (flag_template_function cmpxchg_template_function []);
       };
       {
         name = "sitofp";
