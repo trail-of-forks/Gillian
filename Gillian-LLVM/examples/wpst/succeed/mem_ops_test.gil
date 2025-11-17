@@ -1,0 +1,71 @@
+import "Gillian-LLVM/examples/rt/runtime.gil";
+proc main() {
+    buf_size_8 := {{"i-64", 0x8v64}};
+    buf_size_4 := {{"i-64", 0x4v64}};
+    buf_1 := "llvm_alloca"({{"i-64", 0x0v64}}, buf_size_8);
+    buf_2 := "llvm_alloca"({{"i-64", 0x0v64}}, buf_size_8);
+    buf_3 := "llvm_alloca"({{"i-64", 0x0v64}}, buf_size_8);
+    buf_4 := "llvm_alloca"({{"i-64", 0x0v64}}, buf_size_8);
+    buf_5 := "llvm_alloca"({{"i-64", 0x0v64}}, buf_size_8);
+    buf_6 := "llvm_alloca"({{"i-64", 0x0v64}}, buf_size_4);
+    buf_7 := "llvm_alloca"({{"i-64", 0x0v64}}, buf_size_4);
+
+    v_1 := {{"i-8", 0x0v8}};
+    v_2 := {{"i-8", 0x12v8}};
+    v_3 := {{"i-64", 0x1234567890ABCDEFv64}};
+    v_4 := {{"i-32", 0x12345678v32}};
+    v_5 := {{"i-32", 0xDEADBEEFv32}};
+    v_6 := {{"i-32", 0x0v32}};
+
+    (* Test memset *)
+    stash_unnamed := "llvm_memset"(buf_1, v_1, buf_size_8);
+    r_1 := "llvm_load"("i-64", buf_1);
+    e_1 := {{"i-64", 0x0v64}};
+    assert((r_1 == e_1));
+
+    stash_unnamed := "llvm_memset"(buf_1, v_2, buf_size_4);
+    r_2 := "llvm_load"("i-64", buf_1);
+    e_2 := {{"i-64", 0x1212121200000000v64}};
+    assert((r_2 == e_2));
+
+    (* Test memcpy *)
+    stash_unnamed := "llvm_store"("i-64", buf_2, v_3);
+    stash_unnamed := "llvm_memcpy"(buf_3, buf_2, buf_size_8);
+    r_3 := "llvm_load"("i-64", buf_3);
+    assert((r_3 == v_3));
+
+    (* Test memmove *)
+    stash_unnamed := "llvm_store"("i-64", buf_4, v_3);
+    buf_4_2 := "bvadd_64_64_64"(buf_4, {{"i-64", 0x2v64}});
+    buf_4_4 := "bvadd_64_64_64"(buf_4, {{"i-64", 0x4v64}});
+    stash_unnamed := "llvm_memmove"(buf_4_2, buf_4_4, buf_size_4);
+    r_4 := "llvm_load"("i-64", buf_4);
+    e_3 := {{"i-64", 0x123490ABCDEFCDEFv64}};
+    assert((r_4 == e_3));
+
+    stash_unnamed := "llvm_store"("i-64", buf_5, v_3);
+    buf_5_2 := "bvadd_64_64_64"(buf_5, {{"i-64", 0x2v64}});
+    buf_5_4 := "bvadd_64_64_64"(buf_5, {{"i-64", 0x4v64}});
+    stash_unnamed := "llvm_memmove"(buf_5_4, buf_5_2, buf_size_4);
+    r_5 := "llvm_load"("i-64", buf_5);
+    e_4 := {{"i-64", 0x12345678567890ABv64}};
+    assert((r_5 == e_4));
+
+    (* Test cmpxchg *)
+    stash_unnamed := "llvm_store"("i-32", buf_6, v_4);
+    r_6 := "cmpxchg_64_32_32_33"(buf_6, v_4, v_5);
+    e_5 := {{"i-33", 0x2468ACF1v33}};
+    assert((r_6 == e_5));
+    r_7 := "llvm_load"("i-32", buf_6);
+    assert((r_7 == v_5));
+
+    stash_unnamed := "llvm_store"("i-32", buf_7, v_4);
+    r_8 := "cmpxchg_64_32_32_33"(buf_7, v_5, v_6);
+    e_6 := {{"i-33", 0x2468ACF0v33}};
+    assert((r_8 == e_6));
+    r_9 := "llvm_load"("i-32", buf_7);
+    assert((r_9 == v_4));
+
+    ret := {{}};
+    return
+};

@@ -659,6 +659,48 @@ module Tree = struct
   let zeros ?(perm = Perm.Freeable) span =
     make ~node:(Node.make_owned ~mem_val:Zeros ~perm) ~span ()
 
+  let filled ?(perm = Perm.Freeable) ~value span =
+    let open Delayed.Syntax in
+    let size = Range.size span in
+    let chunk = Chunk.i8 in
+    let size_reduced = Engine.Reduction.reduce_lexpr size in
+    let+ arr =
+      let return_arr ?learned ?learned_types values =
+        Delayed.return ?learned ?learned_types (SVArr.make ~chunk ~values)
+      in
+      let concrete_size_opt =
+        match size_reduced with
+        | Expr.Lit (Int n) -> Some (Z.to_int n)
+        | Expr.Lit (LBitvector (bv, _)) -> Some (Z.to_int bv)
+        | _ -> None
+      in
+      match concrete_size_opt with
+      | Some n when n >= 0 && n <= 512 ->
+          (* Concrete small size: create explicit list *)
+          let values = Expr.EList (List.init n (fun _ -> value)) in
+          return_arr values
+      | _ ->
+          (* Symbolic or large size: create constrained variable *)
+          let open Expr.Infix in
+          let values_var = LVar.alloc () in
+          let values = Expr.LVar values_var in
+          let i = LVar.alloc () in
+          let i_e = Expr.LVar i in
+          let zero = Expr.zero_i in
+          let learned_types = [ (values_var, Type.ListType) ] in
+          let correct_length = Expr.list_length values == size in
+          let all_equal_to_value =
+            forall
+              [ (i, Some Type.IntType) ]
+              ((zero <= i_e && i_e < size)
+              ==> (Expr.list_nth_e values i_e == value))
+          in
+          return_arr
+            ~learned:[ correct_length; all_equal_to_value ]
+            ~learned_types values
+    in
+    make ~node:(Node.make_owned ~mem_val:(Array arr) ~perm) ~span ()
+
   let create_root range =
     { children = None; span = range; node = NotOwned Totally }
 
@@ -1032,6 +1074,25 @@ module Tree = struct
       | NotOwned _ -> DR.error (MissingResource Unfixable)
       | MemVal { min_perm; _ } ->
           if min_perm >=% Writable then DR.ok (zeros ~perm:min_perm range)
+          else
+            DR.error
+              (InsufficientPermission { required = Writable; actual = min_perm })
+    in
+    let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
+    tree
+
+  let fill (t : t) (range : Range.t) (value : Expr.t) : (t, err) DR.t =
+    let open DR.Syntax in
+    let open Perm.Infix in
+    let replace_node node =
+      match node.node with
+      | NotOwned _ -> DR.error (MissingResource Unfixable)
+      | MemVal { min_perm; _ } ->
+          if min_perm >=% Writable then
+            let open Delayed.Syntax in
+            let* filled_tree = filled ~perm:min_perm ~value range in
+            DR.ok filled_tree
           else
             DR.error
               (InsufficientPermission { required = Writable; actual = min_perm })
@@ -1516,7 +1577,6 @@ let zero_init t ofs size =
 
 let memset t ptr value size =
   let open DR.Syntax in
-  let open Delayed.Syntax in
   let range = Range.of_low_and_size ptr size in
   let** span = DR.of_result (get_bounds t) in
   if%sat is_in_bounds range span then
@@ -1524,23 +1584,8 @@ let memset t ptr value size =
     match root with
     | None -> DR.error (MissingResource Unfixable)
     | Some root ->
-        let chunk = Chunk.i8 in
-        let value_sval = SVal.make ~chunk ~value in
-        let ptr_width = Llvmconfig.ptr_width () in
-        let zero_bv = Expr.zero_bv ptr_width in
-        let one_byte = Expr.bv_z Z.one ptr_width in
-
-        let rec store_loop current_tree current_ofs remaining_size =
-          let open Expr.Infix in
-          if%sat remaining_size == zero_bv then DR.ok current_tree
-          else
-            let** new_tree = store current_tree chunk current_ofs value_sval in
-            let next_ofs = Expr.bv_plus current_ofs one_byte in
-            let next_size = Expr.bv_sub remaining_size one_byte in
-            store_loop new_tree next_ofs next_size
-        in
-
-        store_loop t ptr size
+        let** root = Tree.fill root range value in
+        DR.of_result (with_root t root)
   else DR.error BufferOverrun
 
 let poison t ofs size =
