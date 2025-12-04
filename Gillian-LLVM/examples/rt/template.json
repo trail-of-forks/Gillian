@@ -330,6 +330,13 @@
             ]
         },
         {
+            "name": "llvm_vastart",
+            "output_name": "llvm_vastart",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
             "name": "bvadd",
             "output_name": "bvadd_64_64_64",
             "spec": [

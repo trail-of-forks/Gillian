@@ -1815,6 +1815,213 @@ module MemoryLib = struct
         return ()
     | _ -> failwith "Invalid number of arguments"
 
+  let vastart_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Gil_syntax in
+    (* Fixed buffer size: 10 variadic args * 8 bytes = 80 bytes *)
+    let buffer_size_bv = Expr.bv_z (Z.of_int 80) pointer_width in
+    let open Expr.Infix in
+    match exp_list with
+    | [ ap; variadic_args ] ->
+        let ty_check = is_type_of_expr ap LLVMRuntimeTypes.Ptr in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base; offset } = access_ptr ap in
+               let bindr = fresh_sym () in
+
+               (* System V ABI x86-64: Set offsets to indicate all register args used *)
+               let gp_offset_value = Expr.bv_z (Z.of_int 48) 32 in   (* 6 GP regs * 8 bytes *)
+               let fp_offset_value = Expr.bv_z (Z.of_int 304) 32 in  (* 48 + 16 FP regs * 16 bytes *)
+
+               (* Initialize va_list structure fields: *)
+
+               (* Field 0: gp_offset (i32) = 48 *)
+               let gp_offset_ptr_offset = Expr.zero_bv pointer_width in
+               let gp_offset_tagged =
+                 Expr.EList [ Expr.string "i-32"; gp_offset_value ]
+               in
+               let chunk_i32 = Expr.string "i-32" in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [ chunk_i32; base; gp_offset_ptr_offset; gp_offset_tagged ] ))
+               in
+
+               (* Field 1: fp_offset (i32) = 304 *)
+               let fp_offset_ptr_offset = Expr.bv_z (Z.of_int 4) pointer_width in
+               let fp_offset_tagged =
+                 Expr.EList [ Expr.string "i-32"; fp_offset_value ]
+               in
+               (* Calculate adjusted offset for field 1 *)
+               let adjusted_offset_1 =
+                 OpFunctions.add_op_function
+                   [ offset; fp_offset_ptr_offset ]
+                   {
+                     width_of_result = Some pointer_width;
+                     args = [ pointer_width; pointer_width ];
+                   }
+               in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [ chunk_i32; base; adjusted_offset_1; fp_offset_tagged ] ))
+               in
+
+               (* Allocate overflow_arg_area with fixed size for max 10 variadic args *)
+               let overflow_area_sym = fresh_sym () in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( overflow_area_sym,
+                        alloc_name,
+                        [ Expr.zero_bv pointer_width; buffer_size_bv ] ))
+               in
+               let overflow_area_base = Expr.list_nth (Expr.PVar overflow_area_sym) 0 in
+
+               let list_len_sym = fresh_sym () in
+               let* _ =
+                 add_cmd (Cmd.Assignment (list_len_sym, Expr.UnOp (UnOp.LstLen, variadic_args)))
+               in
+               let num_variadic_int = Expr.PVar list_len_sym in
+
+               (* Store each variadic argument into the overflow area *)
+               let store_variadic_args =
+                 let idx_int_var = fresh_sym () in
+                 let offset_bv_var = fresh_sym () in
+                 let loop_label = fresh_sym () in
+                 let body_label = fresh_sym () in
+                 let exit_label = fresh_sym () in
+
+                 (* idx_int = 0 (integer for list indexing) *)
+                 let* _ =
+                   add_cmd (Cmd.Assignment (idx_int_var, Expr.Lit (Literal.Int Z.zero)))
+                 in
+                 (* offset_bv = 0 (bitvector for memory offset) *)
+                 let* _ =
+                   add_cmd (Cmd.Assignment (offset_bv_var, Expr.zero_bv pointer_width))
+                 in
+
+                 (* Loop header: check if idx_int < num_variadic_int (integer comparison) *)
+                 let* _ = new_block loop_label in
+                 let idx_int_expr = Expr.PVar idx_int_var in
+                 let offset_bv_expr = Expr.PVar offset_bv_var in
+                 let loop_cond = Expr.BinOp (idx_int_expr, BinOp.ILessThan, num_variadic_int) in
+                 let* _ = add_cmd (Cmd.GuardedGoto (loop_cond, body_label, exit_label)) in
+
+                 (* Loop body *)
+                 let* _ = new_block body_label in
+
+                 let arg_val_sym = fresh_sym () in
+                 let* _ =
+                   add_cmd
+                     (Cmd.Assignment
+                        (arg_val_sym, Expr.BinOp (variadic_args, BinOp.LstNth, idx_int_expr)))
+                 in
+                 let arg_val = Expr.PVar arg_val_sym in
+
+                 let arg_chunk = Expr.list_nth arg_val 0 in
+
+                 (* Store the argument value at the bitvector offset using its own chunk *)
+                 let store_result = fresh_sym () in
+                 let* _ =
+                   add_cmd
+                     (Cmd.LAction
+                        ( store_result,
+                          store_name,
+                          [ arg_chunk; overflow_area_base; offset_bv_expr; arg_val ] ))
+                 in
+
+                 let one_int = Expr.Lit (Literal.Int Z.one) in
+                 let next_idx_int = Expr.BinOp (idx_int_expr, BinOp.IPlus, one_int) in
+                 let* _ = add_cmd (Cmd.Assignment (idx_int_var, next_idx_int)) in
+
+                 let eight_bv = Expr.bv_z (Z.of_int 8) pointer_width in
+                 let next_offset_bv =
+                   OpFunctions.add_op_function
+                     [ offset_bv_expr; eight_bv ]
+                     {
+                       width_of_result = Some pointer_width;
+                       args = [ pointer_width; pointer_width ];
+                     }
+                 in
+                 let* _ = add_cmd (Cmd.Assignment (offset_bv_var, next_offset_bv)) in
+
+                 (* Jump back to loop header *)
+                 let* _ = add_cmd (Cmd.Goto loop_label) in
+
+                 (* Exit label *)
+                 let* _ = new_block exit_label in
+                 return ()
+               in
+
+               let* _ = store_variadic_args in
+
+               (* Field 2: overflow_arg_area (ptr) = pointer to allocated overflow area *)
+               let overflow_ptr_value =
+                 LLVMRuntimeTypes.make_expr_of_type_unsafe
+                   (Expr.list [ overflow_area_base; Expr.zero_bv pointer_width ])
+                   LLVMRuntimeTypes.Ptr
+               in
+               let overflow_ptr_offset = Expr.bv_z (Z.of_int 8) pointer_width in
+               let chunk_ptr = Expr.string "i-64" in
+               (* Calculate adjusted offset for field 2 *)
+               let adjusted_offset_2 =
+                 OpFunctions.add_op_function
+                   [ offset; overflow_ptr_offset ]
+                   {
+                     width_of_result = Some pointer_width;
+                     args = [ pointer_width; pointer_width ];
+                   }
+               in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [ chunk_ptr; base; adjusted_offset_2; overflow_ptr_value ] ))
+               in
+
+               (* Field 3: reg_save_area (ptr) = NULL (no register args stored) *)
+               let null_ptr_value =
+                 LLVMRuntimeTypes.make_expr_of_type_unsafe
+                   (Expr.list [ Expr.zero_bv pointer_width; Expr.zero_bv pointer_width ])
+                   LLVMRuntimeTypes.Ptr
+               in
+               let reg_save_ptr_offset = Expr.bv_z (Z.of_int 16) pointer_width in
+               (* Calculate adjusted offset for field 3 *)
+               let adjusted_offset_3 =
+                 OpFunctions.add_op_function
+                   [ offset; reg_save_ptr_offset ]
+                   {
+                     width_of_result = Some pointer_width;
+                     args = [ pointer_width; pointer_width ];
+                   }
+               in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [ chunk_ptr; base; adjusted_offset_3; null_ptr_value ] ))
+               in
+
+               let* _ = add_return_of_value (Expr.PVar bindr) in
+               return ())
+            ~false_case:
+              (let* _ =
+                 add_cmd (fail_cmd "Vastart_ap_not_pointer" [ ap; variadic_args ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments for llvm_vastart"
+
   let construct_simple_op
       ~(arity : int)
       ~(f : pointer_width:int -> Expr.t list -> unit Codegenerator.t)
@@ -1852,6 +2059,10 @@ module MemoryLib = struct
       {
         name = "llvm_memmove";
         generator = SimpleOp (construct_simple_op ~arity:3 ~f:memmove_op);
+      };
+      {
+        name = "llvm_vastart";
+        generator = SimpleOp (construct_simple_op ~arity:2 ~f:vastart_op);
       };
     ]
 end
