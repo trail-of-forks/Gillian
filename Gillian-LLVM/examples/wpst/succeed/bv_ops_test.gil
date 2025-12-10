@@ -42,6 +42,9 @@ proc main() {
   v_36 := {{"i-32",0x7890ABCDv32}};
   v_37 := {{"i-8", 0xF0v8}};
   v_38 := {{"i-8", 0x4v8}};
+  v_39 := {{"i-32", 0x7FFFFFFFv32}};
+  v_40 := {{"i-32", 0x7FFFFFFEv32}};
+  v_41 := {{"i-32",0x80000000v32}};
 
   (* Test umin *)
   r_0 := "bvumin_32_32_32"(v_1, v_2);
@@ -246,6 +249,36 @@ proc main() {
   assert((r_74 == v_8));
   r_75 := "ctpop_8_8"(v_37);
   assert((r_75 == v_38));
+
+  (* Test saddsat *)
+  r_76 := "saddsat_32_32_32"(v_10, v_39);
+  assert((r_76 == v_39));
+  r_77 := "saddsat_32_32_32"(v_39, v_10);
+  assert((r_77 == v_39));
+  r_78 := "saddsat_32_32_32"(v_40, v_10);
+  assert((r_78 == v_39));
+  r_79 := "saddsat_32_32_32"(v_40, v_11);
+  assert((r_79 == v_40));
+  r_80 := "saddsat_32_32_32"(v_41, v_23);
+  assert((r_80 == v_41));
+  r_81 := "saddsat_32_32_32"(v_23, v_41);
+  assert((r_81 == v_41));
+
+  (* Test saddsat *)
+  r_82 := "ssubsat_32_32_32"(v_2, v_10);
+  assert((r_82 == v_2));
+  r_83 := "ssubsat_32_32_32"(v_2, v_11);
+  assert((r_83 == v_2));
+  r_84 := "ssubsat_32_32_32"(v_20, v_39);
+  assert((r_84 == v_2));
+  r_85 := "ssubsat_32_32_32"(v_22, v_21);
+  assert((r_85 == v_23));
+  r_86 := "ssubsat_32_32_32"(v_9, v_16);
+  assert((r_86 == v_16));
+  r_87 := "ssubsat_32_32_32"(v_11, v_2);
+  assert((r_87 == v_39));
+  r_88 := "ssubsat_32_32_32"(v_39, v_23);
+  assert((r_88 == v_39));
 
   ret := {{}};
   return

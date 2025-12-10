@@ -2725,6 +2725,170 @@ module UtilityOps = struct
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
+  let ssubsat_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let sub_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSub, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one (width - 1))) width in
+        let min_val = bv_z (Z.shift_left Z.one (width - 1)) width in
+        let zero = Expr.zero_bv width in
+
+        (* Check if y is positive *)
+        let y_check =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (zero, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite y_check
+            ~true_case:
+              ((* Check if x - y would underflow by checking if x < min_val + y *)
+               let min_plus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVPlus,
+                     [ BvExpr (min_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (x, width); BvExpr (min_plus_y, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, min_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, sub_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              ((* Check if x - y would overflow by checking if x > max_val + y *)
+               let max_plus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVPlus,
+                     [ BvExpr (max_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (max_plus_y, width); BvExpr (x, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, max_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, sub_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let saddsat_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one (width - 1))) width in
+        let min_val = bv_z (Z.shift_left Z.one (width - 1)) width in
+        let zero = Expr.zero_bv width in
+
+        (* Check if y is positive *)
+        let y_check =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (zero, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite y_check
+            ~true_case:
+              ((* Check if x + y would overflow by checking if x > max_val - y *)
+               let max_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (max_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (max_minus_y, width); BvExpr (x, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, max_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, add_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              ((* Check if x + y would underflow by checking if x < min_val - y *)
+               let min_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (min_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (x, width); BvExpr (min_minus_y, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, min_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, add_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let generic_template_function
       ~(op : generalized_bv_op_function)
       ~(pointer_width : int)
@@ -2935,6 +3099,24 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
             (flag_template_function
                (UtilityOps.generic_template_function
                   ~op:UtilityOps.uaddsat_op_function)
+               []);
+      };
+      {
+        name = "ssubsat";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.ssubsat_op_function)
+               []);
+      };
+      {
+        name = "saddsat";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.saddsat_op_function)
                []);
       };
       {

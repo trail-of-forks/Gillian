@@ -1293,6 +1293,34 @@
             ]
         },
         {
+            "name": "saddsat",
+            "output_name": "saddsat_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "ssubsat",
+            "output_name": "ssubsat_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
             "name": "ctpop",
             "output_name": "ctpop_8_8",
             "spec": [
