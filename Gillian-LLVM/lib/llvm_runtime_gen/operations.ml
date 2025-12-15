@@ -1325,6 +1325,17 @@ module OpFunctions = struct
   let fp_ceil_function = fp_unop_pred UnOp.M_ceil
   let fp_floor_function = fp_unop_pred UnOp.M_floor
 
+  let fp_trunc_function (inputs : Expr.t list) (shape : bv_op_shape) : Expr.t =
+    let open Gil_syntax in
+    (* Floating point values in Gillian are all represented as Type.NumberType, so just return the input. This could not be implemented in gil-translate because input type differs from the output type in MLIR. *)
+    List.hd inputs
+
+  let thread_local_addr_function (inputs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t =
+    let open Gil_syntax in
+    (* Just return input value for simplicity right now *)
+    List.hd inputs
+
   let extract_value_function (exprs : Expr.t list) (shape : bv_op_shape) :
       Expr.t Codegenerator.t =
     let open Codegenerator in
@@ -2889,6 +2900,247 @@ module UtilityOps = struct
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
+  let uadd_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one width)) width in
+
+        (* Check if x + y would overflow by checking if x > max_val - y *)
+        let max_minus_y =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVSub,
+              [ BvExpr (max_val, width); BvExpr (y, width) ],
+              Some width )
+        in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVUlt,
+              [ BvExpr (max_minus_y, width); BvExpr (x, width) ],
+              None )
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (* Overflow *)
+              (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ add_expr; one ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ add_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let usub_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVUleq, [ BvExpr (x, width); BvExpr (y, width) ], None)
+        in
+        let sub_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSub, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (* Overflow *)
+              (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ sub_expr; one ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ sub_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let sadd_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one (width - 1))) width in
+        let min_val = bv_z (Z.shift_left Z.one (width - 1)) width in
+        let zero = Expr.zero_bv width in
+
+        (* Check if y is positive *)
+        let y_check =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (zero, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite y_check
+            ~true_case:
+              ((* Check if x + y would overflow by checking if x > max_val - y *)
+               let max_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (max_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (max_minus_y, width); BvExpr (x, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (* Overflow *)
+                     (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; one ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (* No overflow *)
+                     (let zero = Expr.zero_bv 1 in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; zero ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              ((* Check if x + y would underflow by checking if x < min_val - y *)
+               let min_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (min_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (x, width); BvExpr (min_minus_y, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (* Overflow *)
+                     (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; one ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (* No overflow *)
+                     (let zero = Expr.zero_bv 1 in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; zero ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let generic_template_function
       ~(op : generalized_bv_op_function)
       ~(pointer_width : int)
@@ -3120,6 +3372,33 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "uadd_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.uadd_overflow_function)
+               []);
+      };
+      {
+        name = "usub_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.usub_overflow_function)
+               []);
+      };
+      {
+        name = "sadd_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.sadd_overflow_function)
+               []);
+      };
+      {
         name = "bvmul";
         generator =
           ValueOp
@@ -3241,6 +3520,15 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
           ValueOp
             (flag_template_function
                (template_from_pattern_unary ~op:OpFunctions.trunc_function)
+               []);
+      };
+      {
+        name = "thread_local_addr";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_unary
+                  ~op:OpFunctions.thread_local_addr_function)
                []);
       };
       {
@@ -3400,6 +3688,14 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
           ValueOp
             (flag_template_function
                (template_from_pattern_fp_unary ~op:OpFunctions.fp_floor_function)
+               []);
+      };
+      {
+        name = "fptrunc";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_unary ~op:OpFunctions.fp_trunc_function)
                []);
       };
       {

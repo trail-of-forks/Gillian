@@ -45,6 +45,19 @@ proc main() {
   v_39 := {{"i-32", 0x7FFFFFFFv32}};
   v_40 := {{"i-32", 0x7FFFFFFEv32}};
   v_41 := {{"i-32",0x80000000v32}};
+  v_42 := {{"i-33",0x3v33}};
+  v_43 := {{"i-33",0xCv33}};
+  v_44 := {{"i-32",0x80000001v32}};
+  v_45 := {{"i-33",0x2v33}};
+  v_46 := {{"i-33",0x1FFFFFFFFv33}};
+  v_47 := {{"i-33",0xFFFFFFF6v33}};
+  v_48 := {{"i-33",0x10000000Bv33}};
+  v_49 := {{"i-33",0x100000002v33}};
+  v_50 := {{"i-33",0x100000000v33}};
+  v_51 := {{"i-33",0xFFFFFFF2v33}};
+  v_52 := {{"i-33",0x1FFFFFFF6v33}};
+  v_53 := {{"i-33",0x12v33}};
+  v_54 := {{"i-33",0xFFFFFFFCv33}};
 
   (* Test umin *)
   r_0 := "bvumin_32_32_32"(v_1, v_2);
@@ -279,6 +292,38 @@ proc main() {
   assert((r_87 == v_39));
   r_88 := "ssubsat_32_32_32"(v_39, v_23);
   assert((r_88 == v_39));
+
+  (* Test uadd_overflow *)
+  r_89 := "uadd_overflow_32_32_33"(v_2, v_44);
+  assert((r_89 == v_42));
+  r_90 := "uadd_overflow_32_32_33"(v_1, v_10);
+  assert((r_90 == v_43));
+
+  (* Test usub_overflow *)
+  r_91 := "usub_overflow_32_32_33"(v_9, v_1);
+  assert((r_91 == v_45));
+  r_92 := "usub_overflow_32_32_33"(v_1, v_9);
+  assert((r_92 == v_46));
+  r_93 := "usub_overflow_32_32_33"(v_2, v_1);
+  assert((r_93 == v_47));
+  r_94 := "usub_overflow_32_32_33"(v_1, v_2);
+  assert((r_94 == v_48));
+
+  (* Test sadd_overflow *)
+  r_95 := "sadd_overflow_32_32_33"(v_2, v_10);
+  assert((r_95 == v_49));
+  r_96 := "sadd_overflow_32_32_33"(v_2, v_11);
+  assert((r_96 == v_50));
+  r_97 := "sadd_overflow_32_32_33"(v_20, v_39);
+  assert((r_97 == v_51));
+  r_98 := "sadd_overflow_32_32_33"(v_22, v_21);
+  assert((r_98 == v_52));
+  r_99 := "sadd_overflow_32_32_33"(v_9, v_16);
+  assert((r_99 == v_53));
+  r_100 := "sadd_overflow_32_32_33"(v_11, v_2);
+  assert((r_100 == v_50));
+  r_101 := "sadd_overflow_32_32_33"(v_39, v_23);
+  assert((r_101 == v_54));
 
   ret := {{}};
   return
