@@ -1090,6 +1090,16 @@ and reduce_lexpr_loop
                     Int32.float_of_bits int32_val
                   in
                   Some (Expr.Lit (Literal.Num float_val))
+              (* BVExtract: extract bits from hi to lo (inclusive) *)
+              | ( BVOps.BVExtract,
+                  [
+                    Expr.Literal hi;
+                    Expr.Literal lo;
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v, _)), _);
+                  ] ) ->
+                  let len = hi - lo + 1 in
+                  let result = Z.extract v lo len in
+                  Some (Expr.Lit (Literal.LBitvector (result, len)))
               | _ -> None
             with _ -> None
           else None

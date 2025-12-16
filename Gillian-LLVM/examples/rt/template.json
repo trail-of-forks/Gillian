@@ -1335,6 +1335,20 @@
             ]
         },
         {
+            "name": "cttz",
+            "output_name": "cttz_8_1_8",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 8, 1 ],
+                        "width_of_result": 8
+                    }
+                }
+            ]
+        },
+        {
             "name": "bvfshl",
             "output_name": "bvfshl_32_32_32_32",
             "spec": [

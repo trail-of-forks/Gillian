@@ -1188,6 +1188,54 @@ module OpFunctions = struct
         return count_result
     | _ -> failwith "Invalid number of arguments"
 
+  let cttz_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        (* TODO: After implementing poison values, use the y argument appropriately *)
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        (* Unroll the loop: check each bit position from LSB to MSB *)
+        let rec cttz_unrolled bit_idx =
+          if bit_idx >= width then
+            (* All bits were zero, return width *)
+            let* _ =
+              add_cmd (Cmd.Assignment (bindr, Expr.bv_z (Z.of_int width) width))
+            in
+            let* _ = add_cmd (Cmd.Goto join_block) in
+            return ()
+          else
+            (* Extract bit at position bit_idx *)
+            let lits = Some [ bit_idx; bit_idx ] in
+            let bit =
+              bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                { shape with args = [ width ] }
+            in
+            (* Check if bit is 1 (i.e., not zero) *)
+            let bit_is_one = Expr.BinOp (bit, BinOp.Equal, Expr.bv_z Z.one 1) in
+            let* _ =
+              ite bit_is_one
+                ~true_case:
+                  (let* _ =
+                     add_cmd
+                       (Cmd.Assignment
+                          (bindr, Expr.bv_z (Z.of_int bit_idx) width))
+                   in
+                   let* _ = add_cmd (Cmd.Goto join_block) in
+                   return ())
+                ~false_case:(cttz_unrolled (bit_idx + 1))
+            in
+            return ()
+        in
+
+        let* _ = cttz_unrolled 0 in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let uitofp_function inputs shape =
     let open Gil_syntax in
     Expr.UnOp (UnOp.IntToNum, bv_op_function BVOps.BVToInt inputs shape)
@@ -3747,6 +3795,15 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
             (flag_template_function
                (UtilityOps.generic_template_function
                   ~op:OpFunctions.ctpop_function)
+               []);
+      };
+      {
+        name = "cttz";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.cttz_function)
                []);
       };
       {
