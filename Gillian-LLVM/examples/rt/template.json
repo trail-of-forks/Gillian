@@ -1571,6 +1571,34 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "umul_overflow",
+            "output_name": "umul_overflow_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32],
+                        "width_of_result": 33
+                    }
+                }
+            ]
+        },
+        {
+            "name": "smul_overflow",
+            "output_name": "smul_overflow_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32],
+                        "width_of_result": 33
+                    }
+                }
+            ]
         }
     ]
 }

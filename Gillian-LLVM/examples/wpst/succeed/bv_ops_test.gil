@@ -58,6 +58,9 @@ proc main() {
   v_52 := {{"i-33",0x1FFFFFFF6v33}};
   v_53 := {{"i-33",0x12v33}};
   v_54 := {{"i-33",0xFFFFFFFCv33}};
+  v_55 := {{"i-33",0x0v33}};
+  v_56 := {{"i-33",0x1v33}};
+  v_57 := {{"i-33",0xDv33}};
 
   (* Test umin *)
   r_0 := "bvumin_32_32_32"(v_1, v_2);
@@ -324,6 +327,31 @@ proc main() {
   assert((r_100 == v_50));
   r_101 := "sadd_overflow_32_32_33"(v_39, v_23);
   assert((r_101 == v_54));
+
+  (* Test umul_overflow *)
+  r_102 := "umul_overflow_32_32_33"(v_15, v_11);
+  assert((r_102 == v_55));
+  r_103 := "umul_overflow_32_32_33"(v_2, v_18);
+  assert((r_103 == v_56));
+  r_104 := "umul_overflow_32_32_33"(v_18, v_2);
+  assert((r_104 == v_56));
+  r_105 := "umul_overflow_32_32_33"(v_16, v_16);
+  assert((r_105 == v_53));
+  r_106 := "umul_overflow_32_32_33"(v_21, v_22);
+  assert((r_106 == v_57));
+
+  (* Test smul_overflow *)
+  r_107 := "smul_overflow_32_32_33"(v_15, v_11);
+  assert((r_107 == v_55));
+  r_108 := "smul_overflow_32_32_33"(v_11, v_15);
+  assert((r_108 == v_55));
+  r_109 := "smul_overflow_32_32_33"(v_2, v_18);
+  assert((r_109 == v_56));
+  r_110 := "smul_overflow_32_32_33"(v_16, v_16);
+  assert((r_110 == v_53));
+  r_111 := "smul_overflow_32_32_33"(v_21, v_22);
+  assert((r_111 == v_43));
+
 
   ret := {{}};
   return

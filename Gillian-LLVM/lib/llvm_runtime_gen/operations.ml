@@ -3141,6 +3141,170 @@ module UtilityOps = struct
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
+  let umul_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let mul_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVMul, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one width)) width in
+
+        (* Check if x * y would overflow by checking if y > 0 && x > max_val / y *)
+        let zero_val = Expr.zero_bv width in
+        let y_pos =
+          Expr.BVExprIntrinsic
+            (BVOps.BVUlt, [ BvExpr (zero_val, width); BvExpr (y, width) ], None)
+        in
+        let max_div_y =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVUDiv,
+              [ BvExpr (max_val, width); BvExpr (y, width) ],
+              Some width )
+        in
+        let max_div_y_lt_x =
+          Expr.BVExprIntrinsic
+            (BVOps.BVUlt, [ BvExpr (max_div_y, width); BvExpr (x, width) ], None)
+        in
+        let* _ =
+          ite y_pos
+            ~true_case:
+              (* Overflow *)
+              (let* _ =
+                 ite max_div_y_lt_x
+                   ~true_case:
+                     (* Overflow *)
+                     (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ mul_expr; one ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (* No overflow*)
+                     (let zero = Expr.zero_bv 1 in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ mul_expr; zero ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ mul_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let smul_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let mul_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVMul, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+
+        let sext_lits = Some [ 1 ] in
+        let mul_sext =
+          OpFunctions.bv_op_function ?literals:sext_lits BVOps.BVSignExtend
+            [ mul_expr ]
+            { shape with args = [ width ] }
+        in
+
+        let x_sext =
+          OpFunctions.bv_op_function ?literals:sext_lits BVOps.BVSignExtend
+            [ x ]
+            { shape with args = [ width ] }
+        in
+        let y_sext =
+          OpFunctions.bv_op_function ?literals:sext_lits BVOps.BVSignExtend
+            [ y ]
+            { shape with args = [ width ] }
+        in
+        let mul_expr2 =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVMul,
+              [ BvExpr (x_sext, width + 1); BvExpr (y_sext, width + 1) ],
+              Some (width + 1) )
+        in
+
+        let bexpr = Expr.BinOp (mul_sext, BinOp.Equal, mul_expr2) in
+
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ mul_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (* Overflow *)
+              (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ mul_expr; one ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let generic_template_function
       ~(op : generalized_bv_op_function)
       ~(pointer_width : int)
@@ -3396,6 +3560,24 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
             (flag_template_function
                (UtilityOps.generic_template_function
                   ~op:UtilityOps.sadd_overflow_function)
+               []);
+      };
+      {
+        name = "umul_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.umul_overflow_function)
+               []);
+      };
+      {
+        name = "smul_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.smul_overflow_function)
                []);
       };
       {
