@@ -64,6 +64,7 @@ proc main() {
   v_58 := {{"i-8",0x0v8}};
   v_59 := {{"i-8",0x8v8}};
   v_60 := {{"i-8",0x3v8}};
+  v_61 := {{"i-8",0x6v8}};
 
   (* Test umin *)
   r_0 := "bvumin_32_32_32"(v_1, v_2);
@@ -364,6 +365,16 @@ proc main() {
   assert((r_114 == v_59));
   r_115 := "cttz_8_1_8"(v_59, v_f);
   assert((r_115 == v_60));
+
+  (* Test ctlz *)
+  r_116 := "ctlz_8_1_8"(v_7, v_f);
+  assert((r_116 == v_61));
+  r_117 := "ctlz_8_1_8"(v_37, v_f);
+  assert((r_117 == v_58));
+  r_118 := "ctlz_8_1_8"(v_58, v_f);
+  assert((r_118 == v_59));
+  r_119 := "ctlz_8_1_8"(v_59, v_f);
+  assert((r_119 == v_38));
 
   ret := {{}};
   return

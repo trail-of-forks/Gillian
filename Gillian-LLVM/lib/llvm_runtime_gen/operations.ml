@@ -1214,7 +1214,7 @@ module OpFunctions = struct
               bv_op_function ?literals:lits BVOps.BVExtract [ x ]
                 { shape with args = [ width ] }
             in
-            (* Check if bit is 1 (i.e., not zero) *)
+            (* Check if bit is 1 *)
             let bit_is_one = Expr.BinOp (bit, BinOp.Equal, Expr.bv_z Z.one 1) in
             let* _ =
               ite bit_is_one
@@ -1232,6 +1232,54 @@ module OpFunctions = struct
         in
 
         let* _ = cttz_unrolled 0 in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let ctlz_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        (* TODO: After implementing poison values, use the y argument appropriately *)
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        (* Unroll the loop: check each bit position from MSB to LSB *)
+        let rec ctlz_unrolled bit_idx =
+          if bit_idx < 0 then
+            (* All bits were zero, return width *)
+            let* _ =
+              add_cmd (Cmd.Assignment (bindr, Expr.bv_z (Z.of_int width) width))
+            in
+            let* _ = add_cmd (Cmd.Goto join_block) in
+            return ()
+          else
+            (* Extract bit at position bit_idx *)
+            let lits = Some [ bit_idx; bit_idx ] in
+            let bit =
+              bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                { shape with args = [ width ] }
+            in
+            (* Check if bit is 1 *)
+            let bit_is_one = Expr.BinOp (bit, BinOp.Equal, Expr.bv_z Z.one 1) in
+            let* _ =
+              ite bit_is_one
+                ~true_case:
+                  (let count = width - bit_idx - 1 in
+                   let* _ =
+                     add_cmd
+                       (Cmd.Assignment (bindr, Expr.bv_z (Z.of_int count) width))
+                   in
+                   let* _ = add_cmd (Cmd.Goto join_block) in
+                   return ())
+                ~false_case:(ctlz_unrolled (bit_idx - 1))
+            in
+            return ()
+        in
+
+        let* _ = ctlz_unrolled (width - 1) in
         let* _ = new_block join_block in
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
@@ -3804,6 +3852,15 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
             (flag_template_function
                (UtilityOps.generic_template_function
                   ~op:OpFunctions.cttz_function)
+               []);
+      };
+      {
+        name = "ctlz";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.ctlz_function)
                []);
       };
       {
