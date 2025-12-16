@@ -989,6 +989,68 @@ and reduce_lexpr_loop
                   let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
                   let masked_result = Z.logand result mask in
                   Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
+              | ( BVOps.BVMul,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 ->
+                  let result = Z.mul v1 v2 in
+                  let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
+                  let masked_result = Z.logand result mask in
+                  Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
+              | ( BVOps.BVUDiv,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 && not (Z.equal v2 Z.zero) ->
+                  let result = Z.div v1 v2 in
+                  Some (Expr.Lit (Literal.LBitvector (result, w1)))
+              | ( BVOps.BVSdiv,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 && not (Z.equal v2 Z.zero) ->
+                  (* Convert to signed, divide, convert back *)
+                  let half = Z.shift_left Z.one (w1 - 1) in
+                  let max_val = Z.shift_left Z.one w1 in
+                  let to_signed v =
+                    if Z.geq v half then Z.sub v max_val else v
+                  in
+                  let sv1 = to_signed v1 in
+                  let sv2 = to_signed v2 in
+                  let result = Z.div sv1 sv2 in
+                  let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
+                  let masked_result = Z.logand result mask in
+                  Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
+              | ( BVOps.BVUrem,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 && not (Z.equal v2 Z.zero) ->
+                  let result = Z.rem v1 v2 in
+                  Some (Expr.Lit (Literal.LBitvector (result, w1)))
+              | ( BVOps.BVSrem,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 && not (Z.equal v2 Z.zero) ->
+                  (* Convert to signed, remainder, convert back *)
+                  let half = Z.shift_left Z.one (w1 - 1) in
+                  let max_val = Z.shift_left Z.one w1 in
+                  let to_signed v =
+                    if Z.geq v half then Z.sub v max_val else v
+                  in
+                  let sv1 = to_signed v1 in
+                  let sv2 = to_signed v2 in
+                  let result = Z.rem sv1 sv2 in
+                  let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
+                  let masked_result = Z.logand result mask in
+                  Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
               | ( BVOps.BVAnd,
                   [
                     Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
