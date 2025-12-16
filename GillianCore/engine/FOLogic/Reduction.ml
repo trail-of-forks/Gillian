@@ -1025,14 +1025,6 @@ and reduce_lexpr_loop
                   let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
                   let masked_result = Z.logand result mask in
                   Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
-              | ( BVOps.BVUrem,
-                  [
-                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
-                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
-                  ] )
-                when w1 = w2 && not (Z.equal v2 Z.zero) ->
-                  let result = Z.rem v1 v2 in
-                  Some (Expr.Lit (Literal.LBitvector (result, w1)))
               | ( BVOps.BVSrem,
                   [
                     Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
