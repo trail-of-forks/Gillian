@@ -1284,6 +1284,346 @@ module OpFunctions = struct
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
+  let is_fp_class_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let x_width = List.nth shape.args 0 in
+        let y_width = List.nth shape.args 1 in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        (* Initialize result to 0 (false) *)
+        let* _ = add_cmd (Cmd.Assignment (bindr, Expr.bv_z Z.zero width)) in
+
+        (* Helper to extract bit i from y *)
+        let extract_bit i =
+          let lits = Some [ i; i ] in
+          bv_op_function ?literals:lits BVOps.BVExtract [ y ]
+            { shape with args = [ y_width ] }
+        in
+
+        (* Check if bit i is set in y *)
+        let bit_is_set i =
+          Expr.BinOp (extract_bit i, BinOp.Equal, Expr.bv_z Z.one 1)
+        in
+
+        (* Helper to set result to 1 and goto join *)
+        let set_result_true () =
+          let* _ = add_cmd (Cmd.Assignment (bindr, Expr.bv_z Z.one width)) in
+          let* _ = add_cmd (Cmd.Goto join_block) in
+          return ()
+        in
+
+        let x_bv =
+          Expr.BVExprIntrinsic
+            ( BVOps.NumToIEEEBV,
+              [ Expr.Literal 64; Expr.BvExpr (x, x_width) ],
+              Some 64 )
+        in
+
+        let frac_width = 52 in
+        let exp_width = 11 in
+
+        let zero_s = Expr.zero_bv 1 in
+        let one_s = Expr.bv_z Z.one 1 in
+
+        let zero_e = Expr.zero_bv exp_width in
+        let max_exp = Expr.bv_z (Z.of_int 0x7ff) exp_width in
+
+        let zero_f = Expr.zero_bv frac_width in
+        let d1_set = Expr.bv_z (Z.of_string "0x8000000000000") frac_width in
+
+        let pos_zero = Expr.zero_bv 64 in
+
+        (* Extract parts of x *)
+        let lits = Some [ 64 - 2; frac_width ] in
+        let exponent =
+          bv_op_function ?literals:lits BVOps.BVExtract [ x_bv ]
+            { args = [ 64 ]; width_of_result = Some exp_width }
+        in
+
+        let lits = Some [ frac_width - 1; 0 ] in
+        let fraction =
+          bv_op_function ?literals:lits BVOps.BVExtract [ x_bv ]
+            { args = [ 64 ]; width_of_result = Some frac_width }
+        in
+
+        let lits = Some [ 64 - 1; 64 - 1 ] in
+        let sign =
+          bv_op_function ?literals:lits BVOps.BVExtract [ x_bv ]
+            { args = [ 64 ]; width_of_result = Some 1 }
+        in
+
+        (* Test for signalling NaN *)
+        let* _ =
+          ite (bit_is_set 0)
+            ~true_case:
+              (let test_expr = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_f, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (fraction, frac_width); BvExpr (d1_set, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for quiet NaN *)
+        let* _ =
+          ite (bit_is_set 1)
+            ~true_case:
+              (let test_expr = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUleq,
+                     [
+                       BvExpr (d1_set, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp (test_expr, BinOp.And, test_expr2))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative infinity *)
+        let* _ =
+          ite (bit_is_set 2)
+            ~true_case:
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr3 = Expr.BinOp (fraction, BinOp.Equal, zero_f) in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative normal *)
+        let* _ =
+          ite (bit_is_set 3)
+            ~true_case:
+              (* 
+                Sign bit == 1
+                Exponent < max_exp
+                0 < Exponent
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (exponent, exp_width); BvExpr (max_exp, exp_width);
+                     ],
+                     None )
+               in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_e, exp_width); BvExpr (exponent, exp_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative subnormal *)
+        let* _ =
+          ite (bit_is_set 4)
+            ~true_case:
+              (* 
+                Sign bit == 1
+                Exponent == 0
+                0 < Fraction
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, zero_e) in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_f, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative zero *)
+        let* _ =
+          ite (bit_is_set 5)
+            ~true_case:
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, zero_e) in
+               let test_expr3 = Expr.BinOp (fraction, BinOp.Equal, zero_f) in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive zero *)
+        let* _ =
+          ite (bit_is_set 6)
+            ~true_case:
+              (let* _ =
+                 ite
+                   (Expr.BinOp (x_bv, BinOp.Equal, pos_zero))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive subnormal *)
+        let* _ =
+          ite (bit_is_set 7)
+            ~true_case:
+              (* 
+                Sign bit == 0
+                Exponent == 0
+                0 < Fraction
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, zero_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, zero_e) in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_f, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive normal *)
+        let* _ =
+          ite (bit_is_set 8)
+            ~true_case:
+              (* 
+                Sign bit == 0
+                Exponent < max_exp
+                0 < Exponent
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, zero_s) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (exponent, exp_width); BvExpr (max_exp, exp_width);
+                     ],
+                     None )
+               in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_e, exp_width); BvExpr (exponent, exp_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive infinity *)
+        let* _ =
+          ite (bit_is_set 9)
+            ~true_case:
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, zero_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr3 = Expr.BinOp (fraction, BinOp.Equal, zero_f) in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let uitofp_function inputs shape =
     let open Gil_syntax in
     Expr.UnOp (UnOp.IntToNum, bv_op_function BVOps.BVToInt inputs shape)
@@ -1420,6 +1760,7 @@ module OpFunctions = struct
   let fp_neg_function = fp_unop_pred UnOp.FUnaryMinus
   let fp_ceil_function = fp_unop_pred UnOp.M_ceil
   let fp_floor_function = fp_unop_pred UnOp.M_floor
+  let fp_round_function = fp_unop_pred UnOp.M_round
 
   let fp_trunc_function (inputs : Expr.t list) (shape : bv_op_shape) : Expr.t =
     let open Gil_syntax in
@@ -1584,6 +1925,56 @@ let template_from_pattern_conversion_generalized
   op_function name 1 (function
     | [ x ] ->
         conversion_patterns_generalized ~pointer_width x op shape flag_checks
+    | _ -> failwith "Invalid number of arguments")
+
+let is_fp_class_patterns
+    ~(pointer_width : int)
+    (fp_expr : Expr.t)
+    (test_expr : Expr.t)
+    (op : generalized_bv_op_function)
+    (shape : bv_op_shape)
+    (flag_checks : bv_op_function list option) =
+  let open Codegenerator in
+  let open TypePatterns in
+  let open Gil_syntax.Expr.Infix in
+  let case_statement (fp_val : Expr.t) (test_val : Expr.t) =
+    let fp_inner = Expr.list_nth fp_val 1 in
+    let test_inner = Expr.list_nth test_val 1 in
+    let* res = op [ fp_inner; test_inner ] shape in
+    let result_type =
+      LLVMRuntimeTypes.type_to_string (LLVMRuntimeTypes.Int 1)
+    in
+    let* _ =
+      add_return_of_value (Expr.EList [ Expr.string result_type; res ])
+    in
+    return ()
+  in
+  let patterns =
+    [
+      {
+        exprs = [ fp_expr; test_expr ];
+        types_ = [ LLVMRuntimeTypes.F32; LLVMRuntimeTypes.Int 32 ];
+        case_stat = case_statement fp_expr test_expr;
+      };
+      {
+        exprs = [ fp_expr; test_expr ];
+        types_ = [ LLVMRuntimeTypes.F64; LLVMRuntimeTypes.Int 32 ];
+        case_stat = case_statement fp_expr test_expr;
+      };
+    ]
+  in
+  let default_statement = add_cmd (fail_cmd "No_type_pattern_matched" []) in
+  let* _ = type_dispatch patterns default_statement in
+  return ()
+
+let template_from_pattern_is_fp_class
+    ~(op : generalized_bv_op_function)
+    ~(pointer_width : int)
+    ~(flag_checks : bv_op_function list option)
+    (name : string)
+    (shape : bv_op_shape) =
+  op_function name 2 (function
+    | [ x; y ] -> is_fp_class_patterns ~pointer_width x y op shape flag_checks
     | _ -> failwith "Invalid number of arguments")
 
 let template_from_integer_op
@@ -3864,6 +4255,15 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "is_fp_class";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_is_fp_class
+                  ~op:OpFunctions.is_fp_class_function)
+               []);
+      };
+      {
         name = "cmpxchg";
         generator =
           ValueOp (flag_template_function cmpxchg_template_function []);
@@ -3984,6 +4384,14 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
           ValueOp
             (flag_template_function
                (template_from_pattern_fp_unary ~op:OpFunctions.fp_floor_function)
+               []);
+      };
+      {
+        name = "round";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_unary ~op:OpFunctions.fp_round_function)
                []);
       };
       {

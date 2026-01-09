@@ -919,6 +919,10 @@ and reduce_lexpr_loop
               (function
                 | Expr.Literal _ -> true
                 | Expr.BvExpr (Expr.Lit (Literal.LBitvector _), _) -> true
+                | Expr.BvExpr (Expr.Lit (Literal.Num _), _) ->
+                    true (* For NumToIEEEBV *)
+                | Expr.BvExpr (Expr.Lit (Literal.Int _), _) ->
+                    true (* For IntToBV *)
                 | _ -> false)
               reduced_es
           in
@@ -1090,6 +1094,48 @@ and reduce_lexpr_loop
                     Int32.float_of_bits int32_val
                   in
                   Some (Expr.Lit (Literal.Num float_val))
+              | ( BVOps.IEEEBVToNum,
+                  [ Expr.BvExpr (Expr.Lit (Literal.LBitvector (v, 64)), _) ] )
+                ->
+                  let float_val =
+                    (* Convert Z to unsigned 64-bit representation *)
+                    let masked =
+                      Z.logand v (Z.of_string "0xFFFFFFFFFFFFFFFF")
+                    in
+                    let int64_val =
+                      if Z.geq masked (Z.shift_left Z.one 63) then
+                        (* Value has high bit set, convert to negative Int64 *)
+                        Z.to_int64 (Z.sub masked (Z.shift_left Z.one 64))
+                      else Z.to_int64 masked
+                    in
+                    Int64.float_of_bits int64_val
+                  in
+                  Some (Expr.Lit (Literal.Num float_val))
+              (* NumToIEEEBV: convert number to IEEE bitvector *)
+              | ( BVOps.NumToIEEEBV,
+                  [ Expr.Literal 32; Expr.BvExpr (Expr.Lit (Literal.Num n), _) ]
+                ) ->
+                  let int32_val = Int32.bits_of_float n in
+                  let z_val = Z.of_int32 int32_val in
+                  Some (Expr.Lit (Literal.LBitvector (z_val, 32)))
+              | ( BVOps.NumToIEEEBV,
+                  [ Expr.Literal 64; Expr.BvExpr (Expr.Lit (Literal.Num n), _) ]
+                ) ->
+                  let int64_val = Int64.bits_of_float n in
+                  let z_val = Z.of_int64 int64_val in
+                  Some (Expr.Lit (Literal.LBitvector (z_val, 64)))
+              (* Simplify numtoieeebv(ieeebvtonum(x)) = x *)
+              | ( BVOps.NumToIEEEBV,
+                  [
+                    Expr.Literal w;
+                    Expr.BvExpr
+                      ( Expr.BVExprIntrinsic
+                          ( BVOps.IEEEBVToNum,
+                            [ Expr.BvExpr (inner_bv, inner_w) ],
+                            _ ),
+                        _ );
+                  ] )
+                when w = inner_w -> Some inner_bv
               (* BVExtract: extract bits from hi to lo (inclusive) *)
               | ( BVOps.BVExtract,
                   [

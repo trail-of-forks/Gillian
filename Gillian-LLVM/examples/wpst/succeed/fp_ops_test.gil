@@ -117,6 +117,16 @@ proc main() {
   r_35 := "fpceil_64_64"(d_3);
   assert((r_35 == d_11));
 
+  (* Test round *)
+  r_36 := "round_32_32"(f_10);
+  assert((r_36 == f_9));
+  r_37 := "round_32_32"(f_3);
+  assert((r_37 == f_11));
+  r_38 := "round_64_64"(d_10);
+  assert((r_38 == d_9));
+  r_39 := "round_64_64"(d_3);
+  assert((r_39 == d_11));
+
   ret := {{}};
   return
 };
