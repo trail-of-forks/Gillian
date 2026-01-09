@@ -919,6 +919,10 @@ and reduce_lexpr_loop
               (function
                 | Expr.Literal _ -> true
                 | Expr.BvExpr (Expr.Lit (Literal.LBitvector _), _) -> true
+                | Expr.BvExpr (Expr.Lit (Literal.Num _), _) ->
+                    true (* For NumToIEEEBV *)
+                | Expr.BvExpr (Expr.Lit (Literal.Int _), _) ->
+                    true (* For IntToBV *)
                 | _ -> false)
               reduced_es
           in
@@ -989,6 +993,60 @@ and reduce_lexpr_loop
                   let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
                   let masked_result = Z.logand result mask in
                   Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
+              | ( BVOps.BVMul,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 ->
+                  let result = Z.mul v1 v2 in
+                  let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
+                  let masked_result = Z.logand result mask in
+                  Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
+              | ( BVOps.BVUDiv,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 && not (Z.equal v2 Z.zero) ->
+                  let result = Z.div v1 v2 in
+                  Some (Expr.Lit (Literal.LBitvector (result, w1)))
+              | ( BVOps.BVSdiv,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 && not (Z.equal v2 Z.zero) ->
+                  (* Convert to signed, divide, convert back *)
+                  let half = Z.shift_left Z.one (w1 - 1) in
+                  let max_val = Z.shift_left Z.one w1 in
+                  let to_signed v =
+                    if Z.geq v half then Z.sub v max_val else v
+                  in
+                  let sv1 = to_signed v1 in
+                  let sv2 = to_signed v2 in
+                  let result = Z.div sv1 sv2 in
+                  let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
+                  let masked_result = Z.logand result mask in
+                  Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
+              | ( BVOps.BVSrem,
+                  [
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v2, w2)), _);
+                  ] )
+                when w1 = w2 && not (Z.equal v2 Z.zero) ->
+                  (* Convert to signed, remainder, convert back *)
+                  let half = Z.shift_left Z.one (w1 - 1) in
+                  let max_val = Z.shift_left Z.one w1 in
+                  let to_signed v =
+                    if Z.geq v half then Z.sub v max_val else v
+                  in
+                  let sv1 = to_signed v1 in
+                  let sv2 = to_signed v2 in
+                  let result = Z.rem sv1 sv2 in
+                  let mask = Z.sub (Z.shift_left Z.one w1) Z.one in
+                  let masked_result = Z.logand result mask in
+                  Some (Expr.Lit (Literal.LBitvector (masked_result, w1)))
               | ( BVOps.BVAnd,
                   [
                     Expr.BvExpr (Expr.Lit (Literal.LBitvector (v1, w1)), _);
@@ -1036,6 +1094,58 @@ and reduce_lexpr_loop
                     Int32.float_of_bits int32_val
                   in
                   Some (Expr.Lit (Literal.Num float_val))
+              | ( BVOps.IEEEBVToNum,
+                  [ Expr.BvExpr (Expr.Lit (Literal.LBitvector (v, 64)), _) ] )
+                ->
+                  let float_val =
+                    (* Convert Z to unsigned 64-bit representation *)
+                    let masked =
+                      Z.logand v (Z.of_string "0xFFFFFFFFFFFFFFFF")
+                    in
+                    let int64_val =
+                      if Z.geq masked (Z.shift_left Z.one 63) then
+                        (* Value has high bit set, convert to negative Int64 *)
+                        Z.to_int64 (Z.sub masked (Z.shift_left Z.one 64))
+                      else Z.to_int64 masked
+                    in
+                    Int64.float_of_bits int64_val
+                  in
+                  Some (Expr.Lit (Literal.Num float_val))
+              (* NumToIEEEBV: convert number to IEEE bitvector *)
+              | ( BVOps.NumToIEEEBV,
+                  [ Expr.Literal 32; Expr.BvExpr (Expr.Lit (Literal.Num n), _) ]
+                ) ->
+                  let int32_val = Int32.bits_of_float n in
+                  let z_val = Z.of_int32 int32_val in
+                  Some (Expr.Lit (Literal.LBitvector (z_val, 32)))
+              | ( BVOps.NumToIEEEBV,
+                  [ Expr.Literal 64; Expr.BvExpr (Expr.Lit (Literal.Num n), _) ]
+                ) ->
+                  let int64_val = Int64.bits_of_float n in
+                  let z_val = Z.of_int64 int64_val in
+                  Some (Expr.Lit (Literal.LBitvector (z_val, 64)))
+              (* Simplify numtoieeebv(ieeebvtonum(x)) = x *)
+              | ( BVOps.NumToIEEEBV,
+                  [
+                    Expr.Literal w;
+                    Expr.BvExpr
+                      ( Expr.BVExprIntrinsic
+                          ( BVOps.IEEEBVToNum,
+                            [ Expr.BvExpr (inner_bv, inner_w) ],
+                            _ ),
+                        _ );
+                  ] )
+                when w = inner_w -> Some inner_bv
+              (* BVExtract: extract bits from hi to lo (inclusive) *)
+              | ( BVOps.BVExtract,
+                  [
+                    Expr.Literal hi;
+                    Expr.Literal lo;
+                    Expr.BvExpr (Expr.Lit (Literal.LBitvector (v, _)), _);
+                  ] ) ->
+                  let len = hi - lo + 1 in
+                  let result = Z.extract v lo len in
+                  Some (Expr.Lit (Literal.LBitvector (result, len)))
               | _ -> None
             with _ -> None
           else None

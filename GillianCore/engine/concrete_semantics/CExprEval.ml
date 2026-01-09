@@ -221,6 +221,8 @@ let rec evaluate_binop
           | Loc l1, Loc l2 -> Bool (l1 = l2)
           | Type t1, Type t2 -> Bool (t1 = t2)
           | LList l1, LList l2 -> Bool (l1 = l2)
+          | LBitvector (v1, w1), LBitvector (v2, w2) ->
+              Bool (Z.equal v1 v2 && w1 = w2)
           | Nono, Nono -> Bool true
           | _, _ -> Bool false)
       | LstNth -> (
@@ -370,7 +372,7 @@ and evaluate_bvop
       match e with
       | LBitvector (e, w) -> f e
       | _ -> failwith "Unhandled non-bitvector literal in evaluate_binop")
-  | BVExtract, [ Expr.Literal lo; Expr.Literal hi; (Expr.BvExpr _ as e) ] -> (
+  | BVExtract, [ Expr.Literal hi; Expr.Literal lo; (Expr.BvExpr _ as e) ] -> (
       let e, w = bv_lit e in
       let size_of_chunk x =
         let lst = String.split_on_char '-' x in
@@ -379,14 +381,13 @@ and evaluate_bvop
           int_of_string st
         else failwith ("invalid chunk " ^ x)
       in
+      let len = hi - lo + 1 in
       match e with
-      | LBitvector (e, w) ->
-          Literal.LBitvector (Z.extract e lo (hi - lo), hi - lo)
+      | LBitvector (e, w) -> Literal.LBitvector (Z.extract e lo len, len)
       | LList [ String ty; LBitvector (e, w) ] ->
-          let w = hi - lo in
           let _chunk = size_of_chunk ty in
           Literal.LList
-            [ String ty; Literal.LBitvector (Z.extract e lo (hi - lo), w) ]
+            [ String ty; Literal.LBitvector (Z.extract e lo len, len) ]
       | _ as v ->
           Logging.tmi (fun m -> m "fallthru bvextract: %a" Literal.pp v);
           failwith "Unimplemented bvextract")

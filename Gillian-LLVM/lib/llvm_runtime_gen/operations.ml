@@ -1188,6 +1188,442 @@ module OpFunctions = struct
         return count_result
     | _ -> failwith "Invalid number of arguments"
 
+  let cttz_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        (* TODO: After implementing poison values, use the y argument appropriately *)
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        (* Unroll the loop: check each bit position from LSB to MSB *)
+        let rec cttz_unrolled bit_idx =
+          if bit_idx >= width then
+            (* All bits were zero, return width *)
+            let* _ =
+              add_cmd (Cmd.Assignment (bindr, Expr.bv_z (Z.of_int width) width))
+            in
+            let* _ = add_cmd (Cmd.Goto join_block) in
+            return ()
+          else
+            (* Extract bit at position bit_idx *)
+            let lits = Some [ bit_idx; bit_idx ] in
+            let bit =
+              bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                { shape with args = [ width ] }
+            in
+            (* Check if bit is 1 *)
+            let bit_is_one = Expr.BinOp (bit, BinOp.Equal, Expr.bv_z Z.one 1) in
+            let* _ =
+              ite bit_is_one
+                ~true_case:
+                  (let* _ =
+                     add_cmd
+                       (Cmd.Assignment
+                          (bindr, Expr.bv_z (Z.of_int bit_idx) width))
+                   in
+                   let* _ = add_cmd (Cmd.Goto join_block) in
+                   return ())
+                ~false_case:(cttz_unrolled (bit_idx + 1))
+            in
+            return ()
+        in
+
+        let* _ = cttz_unrolled 0 in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let ctlz_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        (* TODO: After implementing poison values, use the y argument appropriately *)
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        (* Unroll the loop: check each bit position from MSB to LSB *)
+        let rec ctlz_unrolled bit_idx =
+          if bit_idx < 0 then
+            (* All bits were zero, return width *)
+            let* _ =
+              add_cmd (Cmd.Assignment (bindr, Expr.bv_z (Z.of_int width) width))
+            in
+            let* _ = add_cmd (Cmd.Goto join_block) in
+            return ()
+          else
+            (* Extract bit at position bit_idx *)
+            let lits = Some [ bit_idx; bit_idx ] in
+            let bit =
+              bv_op_function ?literals:lits BVOps.BVExtract [ x ]
+                { shape with args = [ width ] }
+            in
+            (* Check if bit is 1 *)
+            let bit_is_one = Expr.BinOp (bit, BinOp.Equal, Expr.bv_z Z.one 1) in
+            let* _ =
+              ite bit_is_one
+                ~true_case:
+                  (let count = width - bit_idx - 1 in
+                   let* _ =
+                     add_cmd
+                       (Cmd.Assignment (bindr, Expr.bv_z (Z.of_int count) width))
+                   in
+                   let* _ = add_cmd (Cmd.Goto join_block) in
+                   return ())
+                ~false_case:(ctlz_unrolled (bit_idx - 1))
+            in
+            return ()
+        in
+
+        let* _ = ctlz_unrolled (width - 1) in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let is_fp_class_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let x_width = List.nth shape.args 0 in
+        let y_width = List.nth shape.args 1 in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        (* Initialize result to 0 (false) *)
+        let* _ = add_cmd (Cmd.Assignment (bindr, Expr.bv_z Z.zero width)) in
+
+        (* Helper to extract bit i from y *)
+        let extract_bit i =
+          let lits = Some [ i; i ] in
+          bv_op_function ?literals:lits BVOps.BVExtract [ y ]
+            { shape with args = [ y_width ] }
+        in
+
+        (* Check if bit i is set in y *)
+        let bit_is_set i =
+          Expr.BinOp (extract_bit i, BinOp.Equal, Expr.bv_z Z.one 1)
+        in
+
+        (* Helper to set result to 1 and goto join *)
+        let set_result_true () =
+          let* _ = add_cmd (Cmd.Assignment (bindr, Expr.bv_z Z.one width)) in
+          let* _ = add_cmd (Cmd.Goto join_block) in
+          return ()
+        in
+
+        let x_bv =
+          Expr.BVExprIntrinsic
+            ( BVOps.NumToIEEEBV,
+              [ Expr.Literal 64; Expr.BvExpr (x, x_width) ],
+              Some 64 )
+        in
+
+        let frac_width = 52 in
+        let exp_width = 11 in
+
+        let zero_s = Expr.zero_bv 1 in
+        let one_s = Expr.bv_z Z.one 1 in
+
+        let zero_e = Expr.zero_bv exp_width in
+        let max_exp = Expr.bv_z (Z.of_int 0x7ff) exp_width in
+
+        let zero_f = Expr.zero_bv frac_width in
+        let d1_set = Expr.bv_z (Z.of_string "0x8000000000000") frac_width in
+
+        let pos_zero = Expr.zero_bv 64 in
+
+        (* Extract parts of x *)
+        let lits = Some [ 64 - 2; frac_width ] in
+        let exponent =
+          bv_op_function ?literals:lits BVOps.BVExtract [ x_bv ]
+            { args = [ 64 ]; width_of_result = Some exp_width }
+        in
+
+        let lits = Some [ frac_width - 1; 0 ] in
+        let fraction =
+          bv_op_function ?literals:lits BVOps.BVExtract [ x_bv ]
+            { args = [ 64 ]; width_of_result = Some frac_width }
+        in
+
+        let lits = Some [ 64 - 1; 64 - 1 ] in
+        let sign =
+          bv_op_function ?literals:lits BVOps.BVExtract [ x_bv ]
+            { args = [ 64 ]; width_of_result = Some 1 }
+        in
+
+        (* Test for signalling NaN *)
+        let* _ =
+          ite (bit_is_set 0)
+            ~true_case:
+              (let test_expr = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_f, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (fraction, frac_width); BvExpr (d1_set, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for quiet NaN *)
+        let* _ =
+          ite (bit_is_set 1)
+            ~true_case:
+              (let test_expr = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUleq,
+                     [
+                       BvExpr (d1_set, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp (test_expr, BinOp.And, test_expr2))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative infinity *)
+        let* _ =
+          ite (bit_is_set 2)
+            ~true_case:
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr3 = Expr.BinOp (fraction, BinOp.Equal, zero_f) in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative normal *)
+        let* _ =
+          ite (bit_is_set 3)
+            ~true_case:
+              (* 
+                Sign bit == 1
+                Exponent < max_exp
+                0 < Exponent
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (exponent, exp_width); BvExpr (max_exp, exp_width);
+                     ],
+                     None )
+               in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_e, exp_width); BvExpr (exponent, exp_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative subnormal *)
+        let* _ =
+          ite (bit_is_set 4)
+            ~true_case:
+              (* 
+                Sign bit == 1
+                Exponent == 0
+                0 < Fraction
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, zero_e) in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_f, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for negative zero *)
+        let* _ =
+          ite (bit_is_set 5)
+            ~true_case:
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, one_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, zero_e) in
+               let test_expr3 = Expr.BinOp (fraction, BinOp.Equal, zero_f) in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive zero *)
+        let* _ =
+          ite (bit_is_set 6)
+            ~true_case:
+              (let* _ =
+                 ite
+                   (Expr.BinOp (x_bv, BinOp.Equal, pos_zero))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive subnormal *)
+        let* _ =
+          ite (bit_is_set 7)
+            ~true_case:
+              (* 
+                Sign bit == 0
+                Exponent == 0
+                0 < Fraction
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, zero_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, zero_e) in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_f, frac_width); BvExpr (fraction, frac_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive normal *)
+        let* _ =
+          ite (bit_is_set 8)
+            ~true_case:
+              (* 
+                Sign bit == 0
+                Exponent < max_exp
+                0 < Exponent
+              *)
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, zero_s) in
+               let test_expr2 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (exponent, exp_width); BvExpr (max_exp, exp_width);
+                     ],
+                     None )
+               in
+               let test_expr3 =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVUlt,
+                     [
+                       BvExpr (zero_e, exp_width); BvExpr (exponent, exp_width);
+                     ],
+                     None )
+               in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        (* Test for positive infinity *)
+        let* _ =
+          ite (bit_is_set 9)
+            ~true_case:
+              (let test_expr = Expr.BinOp (sign, BinOp.Equal, zero_s) in
+               let test_expr2 = Expr.BinOp (exponent, BinOp.Equal, max_exp) in
+               let test_expr3 = Expr.BinOp (fraction, BinOp.Equal, zero_f) in
+               let* _ =
+                 ite
+                   (Expr.BinOp
+                      ( Expr.BinOp (test_expr, BinOp.And, test_expr2),
+                        BinOp.And,
+                        test_expr3 ))
+                   ~true_case:(set_result_true ()) ~false_case:(return ())
+               in
+               return ())
+            ~false_case:(return ())
+        in
+
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let uitofp_function inputs shape =
     let open Gil_syntax in
     Expr.UnOp (UnOp.IntToNum, bv_op_function BVOps.BVToInt inputs shape)
@@ -1324,6 +1760,18 @@ module OpFunctions = struct
   let fp_neg_function = fp_unop_pred UnOp.FUnaryMinus
   let fp_ceil_function = fp_unop_pred UnOp.M_ceil
   let fp_floor_function = fp_unop_pred UnOp.M_floor
+  let fp_round_function = fp_unop_pred UnOp.M_round
+
+  let fp_trunc_function (inputs : Expr.t list) (shape : bv_op_shape) : Expr.t =
+    let open Gil_syntax in
+    (* Floating point values in Gillian are all represented as Type.NumberType, so just return the input. This could not be implemented in gil-translate because input type differs from the output type in MLIR. *)
+    List.hd inputs
+
+  let thread_local_addr_function (inputs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t =
+    let open Gil_syntax in
+    (* Just return input value for simplicity right now *)
+    List.hd inputs
 
   let extract_value_function (exprs : Expr.t list) (shape : bv_op_shape) :
       Expr.t Codegenerator.t =
@@ -1477,6 +1925,56 @@ let template_from_pattern_conversion_generalized
   op_function name 1 (function
     | [ x ] ->
         conversion_patterns_generalized ~pointer_width x op shape flag_checks
+    | _ -> failwith "Invalid number of arguments")
+
+let is_fp_class_patterns
+    ~(pointer_width : int)
+    (fp_expr : Expr.t)
+    (test_expr : Expr.t)
+    (op : generalized_bv_op_function)
+    (shape : bv_op_shape)
+    (flag_checks : bv_op_function list option) =
+  let open Codegenerator in
+  let open TypePatterns in
+  let open Gil_syntax.Expr.Infix in
+  let case_statement (fp_val : Expr.t) (test_val : Expr.t) =
+    let fp_inner = Expr.list_nth fp_val 1 in
+    let test_inner = Expr.list_nth test_val 1 in
+    let* res = op [ fp_inner; test_inner ] shape in
+    let result_type =
+      LLVMRuntimeTypes.type_to_string (LLVMRuntimeTypes.Int 1)
+    in
+    let* _ =
+      add_return_of_value (Expr.EList [ Expr.string result_type; res ])
+    in
+    return ()
+  in
+  let patterns =
+    [
+      {
+        exprs = [ fp_expr; test_expr ];
+        types_ = [ LLVMRuntimeTypes.F32; LLVMRuntimeTypes.Int 32 ];
+        case_stat = case_statement fp_expr test_expr;
+      };
+      {
+        exprs = [ fp_expr; test_expr ];
+        types_ = [ LLVMRuntimeTypes.F64; LLVMRuntimeTypes.Int 32 ];
+        case_stat = case_statement fp_expr test_expr;
+      };
+    ]
+  in
+  let default_statement = add_cmd (fail_cmd "No_type_pattern_matched" []) in
+  let* _ = type_dispatch patterns default_statement in
+  return ()
+
+let template_from_pattern_is_fp_class
+    ~(op : generalized_bv_op_function)
+    ~(pointer_width : int)
+    ~(flag_checks : bv_op_function list option)
+    (name : string)
+    (shape : bv_op_shape) =
+  op_function name 2 (function
+    | [ x; y ] -> is_fp_class_patterns ~pointer_width x y op shape flag_checks
     | _ -> failwith "Invalid number of arguments")
 
 let template_from_integer_op
@@ -1815,6 +2313,252 @@ module MemoryLib = struct
         return ()
     | _ -> failwith "Invalid number of arguments"
 
+  let vastart_op ~(pointer_width : int) (exp_list : Expr.t list) :
+      unit Codegenerator.t =
+    let open Codegenerator in
+    let open Gil_syntax in
+    (* Fixed buffer size: 10 variadic args * 8 bytes = 80 bytes *)
+    let buffer_size_bv = Expr.bv_z (Z.of_int 80) pointer_width in
+    let open Expr.Infix in
+    match exp_list with
+    | [ ap; variadic_args ] ->
+        let ty_check = is_type_of_expr ap LLVMRuntimeTypes.Ptr in
+        let* _ =
+          ite ty_check
+            ~true_case:
+              (let { base; offset } = access_ptr ap in
+               let bindr = fresh_sym () in
+
+               (* System V ABI x86-64: Set offsets to indicate all register args used *)
+               let gp_offset_value = Expr.bv_z (Z.of_int 48) 32 in
+               let fp_offset_value = Expr.bv_z (Z.of_int 304) 32 in
+
+               (* Initialize va_list structure fields: *)
+
+               (* Field 0: gp_offset (i32) = 48 *)
+               let gp_offset_ptr_offset = Expr.zero_bv pointer_width in
+               let gp_offset_tagged =
+                 Expr.EList [ Expr.string "i-32"; gp_offset_value ]
+               in
+               let chunk_i32 = Expr.string "i-32" in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [
+                          chunk_i32;
+                          base;
+                          gp_offset_ptr_offset;
+                          gp_offset_tagged;
+                        ] ))
+               in
+
+               (* Field 1: fp_offset (i32) = 304 *)
+               let fp_offset_ptr_offset =
+                 Expr.bv_z (Z.of_int 4) pointer_width
+               in
+               let fp_offset_tagged =
+                 Expr.EList [ Expr.string "i-32"; fp_offset_value ]
+               in
+               (* Calculate adjusted offset for field 1 *)
+               let adjusted_offset_1 =
+                 OpFunctions.add_op_function
+                   [ offset; fp_offset_ptr_offset ]
+                   {
+                     width_of_result = Some pointer_width;
+                     args = [ pointer_width; pointer_width ];
+                   }
+               in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [ chunk_i32; base; adjusted_offset_1; fp_offset_tagged ]
+                      ))
+               in
+
+               (* Allocate overflow_arg_area with fixed size for max 10 variadic args *)
+               let overflow_area_sym = fresh_sym () in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( overflow_area_sym,
+                        alloc_name,
+                        [ Expr.zero_bv pointer_width; buffer_size_bv ] ))
+               in
+               let overflow_area_base =
+                 Expr.list_nth (Expr.PVar overflow_area_sym) 0
+               in
+
+               let list_len_sym = fresh_sym () in
+               let* _ =
+                 add_cmd
+                   (Cmd.Assignment
+                      (list_len_sym, Expr.UnOp (UnOp.LstLen, variadic_args)))
+               in
+               let num_variadic_int = Expr.PVar list_len_sym in
+
+               (* Store each variadic argument into the overflow area *)
+               let store_variadic_args =
+                 let idx_int_var = fresh_sym () in
+                 let offset_bv_var = fresh_sym () in
+                 let loop_label = fresh_sym () in
+                 let body_label = fresh_sym () in
+                 let exit_label = fresh_sym () in
+
+                 (* idx_int = 0 (integer for list indexing) *)
+                 let* _ =
+                   add_cmd
+                     (Cmd.Assignment (idx_int_var, Expr.Lit (Literal.Int Z.zero)))
+                 in
+                 (* offset_bv = 0 (bitvector for memory offset) *)
+                 let* _ =
+                   add_cmd
+                     (Cmd.Assignment (offset_bv_var, Expr.zero_bv pointer_width))
+                 in
+
+                 (* Loop header: check if idx_int < num_variadic_int (integer comparison) *)
+                 let* _ = new_block loop_label in
+                 let idx_int_expr = Expr.PVar idx_int_var in
+                 let offset_bv_expr = Expr.PVar offset_bv_var in
+                 let loop_cond =
+                   Expr.BinOp (idx_int_expr, BinOp.ILessThan, num_variadic_int)
+                 in
+                 let* _ =
+                   add_cmd (Cmd.GuardedGoto (loop_cond, body_label, exit_label))
+                 in
+
+                 (* Loop body *)
+                 let* _ = new_block body_label in
+
+                 let arg_val_sym = fresh_sym () in
+                 let* _ =
+                   add_cmd
+                     (Cmd.Assignment
+                        ( arg_val_sym,
+                          Expr.BinOp (variadic_args, BinOp.LstNth, idx_int_expr)
+                        ))
+                 in
+                 let arg_val = Expr.PVar arg_val_sym in
+
+                 let arg_chunk = Expr.list_nth arg_val 0 in
+
+                 (* Store the argument value at the bitvector offset using its own chunk *)
+                 let store_result = fresh_sym () in
+                 let* _ =
+                   add_cmd
+                     (Cmd.LAction
+                        ( store_result,
+                          store_name,
+                          [
+                            arg_chunk;
+                            overflow_area_base;
+                            offset_bv_expr;
+                            arg_val;
+                          ] ))
+                 in
+
+                 let one_int = Expr.Lit (Literal.Int Z.one) in
+                 let next_idx_int =
+                   Expr.BinOp (idx_int_expr, BinOp.IPlus, one_int)
+                 in
+                 let* _ =
+                   add_cmd (Cmd.Assignment (idx_int_var, next_idx_int))
+                 in
+
+                 let eight_bv = Expr.bv_z (Z.of_int 8) pointer_width in
+                 let next_offset_bv =
+                   OpFunctions.add_op_function
+                     [ offset_bv_expr; eight_bv ]
+                     {
+                       width_of_result = Some pointer_width;
+                       args = [ pointer_width; pointer_width ];
+                     }
+                 in
+                 let* _ =
+                   add_cmd (Cmd.Assignment (offset_bv_var, next_offset_bv))
+                 in
+
+                 (* Jump back to loop header *)
+                 let* _ = add_cmd (Cmd.Goto loop_label) in
+
+                 (* Exit label *)
+                 let* _ = new_block exit_label in
+                 return ()
+               in
+
+               let* _ = store_variadic_args in
+
+               (* Field 2: overflow_arg_area (ptr) = pointer to allocated overflow area *)
+               let overflow_ptr_value =
+                 LLVMRuntimeTypes.make_expr_of_type_unsafe
+                   (Expr.list
+                      [ overflow_area_base; Expr.zero_bv pointer_width ])
+                   LLVMRuntimeTypes.Ptr
+               in
+               let overflow_ptr_offset = Expr.bv_z (Z.of_int 8) pointer_width in
+               let chunk_ptr = Expr.string "i-64" in
+               (* Calculate adjusted offset for field 2 *)
+               let adjusted_offset_2 =
+                 OpFunctions.add_op_function
+                   [ offset; overflow_ptr_offset ]
+                   {
+                     width_of_result = Some pointer_width;
+                     args = [ pointer_width; pointer_width ];
+                   }
+               in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [
+                          chunk_ptr; base; adjusted_offset_2; overflow_ptr_value;
+                        ] ))
+               in
+
+               (* Field 3: reg_save_area (ptr) = NULL (no register args stored) *)
+               let null_ptr_value =
+                 LLVMRuntimeTypes.make_expr_of_type_unsafe
+                   (Expr.list
+                      [ Expr.zero_bv pointer_width; Expr.zero_bv pointer_width ])
+                   LLVMRuntimeTypes.Ptr
+               in
+               let reg_save_ptr_offset =
+                 Expr.bv_z (Z.of_int 16) pointer_width
+               in
+               (* Calculate adjusted offset for field 3 *)
+               let adjusted_offset_3 =
+                 OpFunctions.add_op_function
+                   [ offset; reg_save_ptr_offset ]
+                   {
+                     width_of_result = Some pointer_width;
+                     args = [ pointer_width; pointer_width ];
+                   }
+               in
+               let* _ =
+                 add_cmd
+                   (Cmd.LAction
+                      ( bindr,
+                        store_name,
+                        [ chunk_ptr; base; adjusted_offset_3; null_ptr_value ]
+                      ))
+               in
+
+               let* _ = add_return_of_value (Expr.PVar bindr) in
+               return ())
+            ~false_case:
+              (let* _ =
+                 add_cmd
+                   (fail_cmd "Vastart_ap_not_pointer" [ ap; variadic_args ])
+               in
+               return ())
+        in
+        return ()
+    | _ -> failwith "Invalid number of arguments for llvm_vastart"
+
   let construct_simple_op
       ~(arity : int)
       ~(f : pointer_width:int -> Expr.t list -> unit Codegenerator.t)
@@ -1852,6 +2596,10 @@ module MemoryLib = struct
       {
         name = "llvm_memmove";
         generator = SimpleOp (construct_simple_op ~arity:3 ~f:memmove_op);
+      };
+      {
+        name = "llvm_vastart";
+        generator = SimpleOp (construct_simple_op ~arity:2 ~f:vastart_op);
       };
     ]
 end
@@ -2475,6 +3223,575 @@ module UtilityOps = struct
         return (Expr.PVar bindr)
     | _ -> failwith "Invalid number of arguments"
 
+  let ssubsat_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let sub_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSub, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one (width - 1))) width in
+        let min_val = bv_z (Z.shift_left Z.one (width - 1)) width in
+        let zero = Expr.zero_bv width in
+
+        (* Check if y is positive *)
+        let y_check =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (zero, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite y_check
+            ~true_case:
+              ((* Check if x - y would underflow by checking if x < min_val + y *)
+               let min_plus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVPlus,
+                     [ BvExpr (min_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (x, width); BvExpr (min_plus_y, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, min_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, sub_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              ((* Check if x - y would overflow by checking if x > max_val + y *)
+               let max_plus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVPlus,
+                     [ BvExpr (max_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (max_plus_y, width); BvExpr (x, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, max_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, sub_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let saddsat_op_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = shape.width_of_result |> Option.get in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one (width - 1))) width in
+        let min_val = bv_z (Z.shift_left Z.one (width - 1)) width in
+        let zero = Expr.zero_bv width in
+
+        (* Check if y is positive *)
+        let y_check =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (zero, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite y_check
+            ~true_case:
+              ((* Check if x + y would overflow by checking if x > max_val - y *)
+               let max_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (max_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (max_minus_y, width); BvExpr (x, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, max_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, add_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              ((* Check if x + y would underflow by checking if x < min_val - y *)
+               let min_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (min_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (x, width); BvExpr (min_minus_y, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, min_val)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (let* _ = add_cmd (Cmd.Assignment (bindr, add_expr)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let uadd_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one width)) width in
+
+        (* Check if x + y would overflow by checking if x > max_val - y *)
+        let max_minus_y =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVSub,
+              [ BvExpr (max_val, width); BvExpr (y, width) ],
+              Some width )
+        in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVUlt,
+              [ BvExpr (max_minus_y, width); BvExpr (x, width) ],
+              None )
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (* Overflow *)
+              (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ add_expr; one ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ add_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let usub_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+        let bexpr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVUleq, [ BvExpr (x, width); BvExpr (y, width) ], None)
+        in
+        let sub_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSub, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (* Overflow *)
+              (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ sub_expr; one ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ sub_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let sadd_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let add_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVPlus, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one (width - 1))) width in
+        let min_val = bv_z (Z.shift_left Z.one (width - 1)) width in
+        let zero = Expr.zero_bv width in
+
+        (* Check if y is positive *)
+        let y_check =
+          Expr.BVExprIntrinsic
+            (BVOps.BVSlt, [ BvExpr (zero, width); BvExpr (y, width) ], None)
+        in
+        let* _ =
+          ite y_check
+            ~true_case:
+              ((* Check if x + y would overflow by checking if x > max_val - y *)
+               let max_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (max_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (max_minus_y, width); BvExpr (x, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (* Overflow *)
+                     (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; one ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (* No overflow *)
+                     (let zero = Expr.zero_bv 1 in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; zero ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              ((* Check if x + y would underflow by checking if x < min_val - y *)
+               let min_minus_y =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSub,
+                     [ BvExpr (min_val, width); BvExpr (y, width) ],
+                     Some width )
+               in
+               let x_check =
+                 Expr.BVExprIntrinsic
+                   ( BVOps.BVSlt,
+                     [ BvExpr (x, width); BvExpr (min_minus_y, width) ],
+                     None )
+               in
+               let* _ =
+                 ite x_check
+                   ~true_case:
+                     (* Overflow *)
+                     (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; one ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (* No overflow *)
+                     (let zero = Expr.zero_bv 1 in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ add_expr; zero ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let umul_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let mul_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVMul, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+        let max_val = bv_z (Z.pred (Z.shift_left Z.one width)) width in
+
+        (* Check if x * y would overflow by checking if y > 0 && x > max_val / y *)
+        let zero_val = Expr.zero_bv width in
+        let y_pos =
+          Expr.BVExprIntrinsic
+            (BVOps.BVUlt, [ BvExpr (zero_val, width); BvExpr (y, width) ], None)
+        in
+        let max_div_y =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVUDiv,
+              [ BvExpr (max_val, width); BvExpr (y, width) ],
+              Some width )
+        in
+        let max_div_y_lt_x =
+          Expr.BVExprIntrinsic
+            (BVOps.BVUlt, [ BvExpr (max_div_y, width); BvExpr (x, width) ], None)
+        in
+        let* _ =
+          ite y_pos
+            ~true_case:
+              (* Overflow *)
+              (let* _ =
+                 ite max_div_y_lt_x
+                   ~true_case:
+                     (* Overflow *)
+                     (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ mul_expr; one ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+                   ~false_case:
+                     (* No overflow*)
+                     (let zero = Expr.zero_bv 1 in
+                      let concat_shape =
+                        {
+                          args = [ width; 1 ];
+                          width_of_result = Some (width + 1);
+                        }
+                      in
+                      let result =
+                        OpFunctions.bv_op_function BVOps.BVConcat
+                          [ mul_expr; zero ] concat_shape
+                      in
+                      let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+                      let* _ = add_cmd (Cmd.Goto join_block) in
+                      return ())
+               in
+               return ())
+            ~false_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ mul_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
+  let smul_overflow_function (exprs : Expr.t list) (shape : bv_op_shape) :
+      Expr.t Codegenerator.t =
+    let open Codegenerator in
+    let open Gillian.Gil_syntax.Expr in
+    match exprs with
+    | [ x; y ] ->
+        let width = List.hd shape.args in
+        let bindr = fresh_sym () in
+        let join_block = fresh_sym () in
+
+        let mul_expr =
+          Expr.BVExprIntrinsic
+            (BVOps.BVMul, [ BvExpr (x, width); BvExpr (y, width) ], Some width)
+        in
+
+        let sext_lits = Some [ 1 ] in
+        let mul_sext =
+          OpFunctions.bv_op_function ?literals:sext_lits BVOps.BVSignExtend
+            [ mul_expr ]
+            { shape with args = [ width ] }
+        in
+
+        let x_sext =
+          OpFunctions.bv_op_function ?literals:sext_lits BVOps.BVSignExtend
+            [ x ]
+            { shape with args = [ width ] }
+        in
+        let y_sext =
+          OpFunctions.bv_op_function ?literals:sext_lits BVOps.BVSignExtend
+            [ y ]
+            { shape with args = [ width ] }
+        in
+        let mul_expr2 =
+          Expr.BVExprIntrinsic
+            ( BVOps.BVMul,
+              [ BvExpr (x_sext, width + 1); BvExpr (y_sext, width + 1) ],
+              Some (width + 1) )
+        in
+
+        let bexpr = Expr.BinOp (mul_sext, BinOp.Equal, mul_expr2) in
+
+        let* _ =
+          ite bexpr
+            ~true_case:
+              (* No overflow *)
+              (let zero = Expr.zero_bv 1 in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ mul_expr; zero ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+            ~false_case:
+              (* Overflow *)
+              (let one = Expr.Lit (Literal.LBitvector (Z.of_int 1, 1)) in
+               let concat_shape =
+                 { args = [ width; 1 ]; width_of_result = Some (width + 1) }
+               in
+               let result =
+                 OpFunctions.bv_op_function BVOps.BVConcat [ mul_expr; one ]
+                   concat_shape
+               in
+               let* _ = add_cmd (Cmd.Assignment (bindr, result)) in
+               let* _ = add_cmd (Cmd.Goto join_block) in
+               return ())
+        in
+        let* _ = new_block join_block in
+        return (Expr.PVar bindr)
+    | _ -> failwith "Invalid number of arguments"
+
   let generic_template_function
       ~(op : generalized_bv_op_function)
       ~(pointer_width : int)
@@ -2688,6 +4005,69 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "ssubsat";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.ssubsat_op_function)
+               []);
+      };
+      {
+        name = "saddsat";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.saddsat_op_function)
+               []);
+      };
+      {
+        name = "uadd_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.uadd_overflow_function)
+               []);
+      };
+      {
+        name = "usub_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.usub_overflow_function)
+               []);
+      };
+      {
+        name = "sadd_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.sadd_overflow_function)
+               []);
+      };
+      {
+        name = "umul_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.umul_overflow_function)
+               []);
+      };
+      {
+        name = "smul_overflow";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:UtilityOps.smul_overflow_function)
+               []);
+      };
+      {
         name = "bvmul";
         generator =
           ValueOp
@@ -2812,6 +4192,15 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
                []);
       };
       {
+        name = "thread_local_addr";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_unary
+                  ~op:OpFunctions.thread_local_addr_function)
+               []);
+      };
+      {
         name = "bvfshl";
         generator =
           ValueOp
@@ -2845,6 +4234,33 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
             (flag_template_function
                (UtilityOps.generic_template_function
                   ~op:OpFunctions.ctpop_function)
+               []);
+      };
+      {
+        name = "cttz";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.cttz_function)
+               []);
+      };
+      {
+        name = "ctlz";
+        generator =
+          ValueOp
+            (flag_template_function
+               (UtilityOps.generic_template_function
+                  ~op:OpFunctions.ctlz_function)
+               []);
+      };
+      {
+        name = "is_fp_class";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_is_fp_class
+                  ~op:OpFunctions.is_fp_class_function)
                []);
       };
       {
@@ -2968,6 +4384,22 @@ module LLVMTemplates : Monomorphizer.OpTemplates = struct
           ValueOp
             (flag_template_function
                (template_from_pattern_fp_unary ~op:OpFunctions.fp_floor_function)
+               []);
+      };
+      {
+        name = "round";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_unary ~op:OpFunctions.fp_round_function)
+               []);
+      };
+      {
+        name = "fptrunc";
+        generator =
+          ValueOp
+            (flag_template_function
+               (template_from_pattern_fp_unary ~op:OpFunctions.fp_trunc_function)
                []);
       };
       {

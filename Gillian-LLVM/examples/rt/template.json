@@ -330,6 +330,13 @@
             ]
         },
         {
+            "name": "llvm_vastart",
+            "output_name": "llvm_vastart",
+            "spec": [
+                "SimpleSpec"
+            ]
+        },
+        {
             "name": "bvadd",
             "output_name": "bvadd_64_64_64",
             "spec": [
@@ -1272,8 +1279,64 @@
             ]
         },
         {
+            "name": "round",
+            "output_name": "round_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "round",
+            "output_name": "round_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
             "name": "uaddsat",
             "output_name": "uaddsat_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "saddsat",
+            "output_name": "saddsat_32_32_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 32, 32 ],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "ssubsat",
+            "output_name": "ssubsat_32_32_32",
             "spec": [
                 "ValueSpec",
                 {
@@ -1294,6 +1357,34 @@
                     "flags": [],
                     "shape": {
                         "args": [ 8 ],
+                        "width_of_result": 8
+                    }
+                }
+            ]
+        },
+        {
+            "name": "cttz",
+            "output_name": "cttz_8_1_8",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 8, 1 ],
+                        "width_of_result": 8
+                    }
+                }
+            ]
+        },
+        {
+            "name": "ctlz",
+            "output_name": "ctlz_8_1_8",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 8, 1 ],
                         "width_of_result": 8
                     }
                 }
@@ -1384,6 +1475,20 @@
             ]
         },
         {
+            "name": "bitcast_bv_to_fp",
+            "output_name": "bitcast_bv_to_fp_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [ 64 ],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
             "name": "create_symbolic_int",
             "output_name": "create_symbolic_int_32",
             "spec": [
@@ -1463,6 +1568,118 @@
                     "shape": {
                         "args": [64, 32, 32],
                         "width_of_result": 33
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fptrunc",
+            "output_name": "fptrunc_64_32",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64],
+                        "width_of_result": 32
+                    }
+                }
+            ]
+        },
+        {
+            "name": "thread_local_addr",
+            "output_name": "thread_local_addr_64_64",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64],
+                        "width_of_result": 64
+                    }
+                }
+            ]
+        },
+        {
+            "name": "uadd_overflow",
+            "output_name": "uadd_overflow_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32],
+                        "width_of_result": 33
+                    }
+                }
+            ]
+        },
+        {
+            "name": "usub_overflow",
+            "output_name": "usub_overflow_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32],
+                        "width_of_result": 33
+                    }
+                }
+            ]
+        },
+        {
+            "name": "sadd_overflow",
+            "output_name": "sadd_overflow_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32],
+                        "width_of_result": 33
+                    }
+                }
+            ]
+        },
+        {
+            "name": "umul_overflow",
+            "output_name": "umul_overflow_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32],
+                        "width_of_result": 33
+                    }
+                }
+            ]
+        },
+        {
+            "name": "smul_overflow",
+            "output_name": "smul_overflow_32_32_33",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [32, 32],
+                        "width_of_result": 33
+                    }
+                }
+            ]
+        },
+        {
+            "name": "is_fp_class",
+            "output_name": "is_fp_class_64_32_1",
+            "spec": [
+                "ValueSpec",
+                {
+                    "flags": [],
+                    "shape": {
+                        "args": [64, 32],
+                        "width_of_result": 1
                     }
                 }
             ]

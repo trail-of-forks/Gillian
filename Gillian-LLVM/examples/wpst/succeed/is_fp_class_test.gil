@@ -1,0 +1,179 @@
+
+import "Gillian-LLVM/examples/rt/runtime.gil";
+proc do_test(fp_val, test, expected) {
+  v_1 := "bitcast_bv_to_fp_64_64"(fp_val);
+  r_1 := "is_fp_class_64_32_1"(v_1, test);
+  assert((r_1 == expected));
+  ret := {{}};
+  return
+};
+proc main() {
+  v_t := {{"i-1", 0x1v1}};
+  v_f := {{"i-1", 0x0v1}};
+
+  t_0 := {{"i-32", 0x1v32}};
+  t_1 := {{"i-32", 0x2v32}};
+  t_2 := {{"i-32", 0x4v32}};
+  t_3 := {{"i-32", 0x8v32}};
+  t_4 := {{"i-32", 0x10v32}};
+  t_5 := {{"i-32", 0x20v32}};
+  t_6 := {{"i-32", 0x40v32}};
+  t_7 := {{"i-32", 0x80v32}};
+  t_8 := {{"i-32", 0x100v32}};
+  t_9 := {{"i-32", 0x200v32}};
+  t_all := {{"i-32", 0x3FFv32}};
+  t_none := {{"i-32", 0x0v32}};
+
+  (* Test signalling NaN *)
+  d_1 := {{"i-64", 0x7FF0000000080000v64}};
+  stash_unnamed := "do_test"(d_1, t_0, v_t);
+  stash_unnamed := "do_test"(d_1, t_1, v_f);
+  stash_unnamed := "do_test"(d_1, t_2, v_f);
+  stash_unnamed := "do_test"(d_1, t_3, v_f);
+  stash_unnamed := "do_test"(d_1, t_4, v_f);
+  stash_unnamed := "do_test"(d_1, t_5, v_f);
+  stash_unnamed := "do_test"(d_1, t_6, v_f);
+  stash_unnamed := "do_test"(d_1, t_7, v_f);
+  stash_unnamed := "do_test"(d_1, t_8, v_f);
+  stash_unnamed := "do_test"(d_1, t_9, v_f);
+  stash_unnamed := "do_test"(d_1, t_all, v_t);
+  stash_unnamed := "do_test"(d_1, t_none, v_f);
+
+  (* Test quiet NaN *)
+  d_2 := {{"i-64", 0x7FF8000000080000v64}};
+  stash_unnamed := "do_test"(d_2, t_0, v_f);
+  stash_unnamed := "do_test"(d_2, t_1, v_t);
+  stash_unnamed := "do_test"(d_2, t_2, v_f);
+  stash_unnamed := "do_test"(d_2, t_3, v_f);
+  stash_unnamed := "do_test"(d_2, t_4, v_f);
+  stash_unnamed := "do_test"(d_2, t_5, v_f);
+  stash_unnamed := "do_test"(d_2, t_6, v_f);
+  stash_unnamed := "do_test"(d_2, t_7, v_f);
+  stash_unnamed := "do_test"(d_2, t_8, v_f);
+  stash_unnamed := "do_test"(d_2, t_9, v_f);
+  stash_unnamed := "do_test"(d_2, t_all, v_t);
+  stash_unnamed := "do_test"(d_2, t_none, v_f);
+
+  (* Test negative infinity *)
+  d_3 := {{"i-64", 0xFFF0000000000000v64}};
+  stash_unnamed := "do_test"(d_3, t_0, v_f);
+  stash_unnamed := "do_test"(d_3, t_1, v_f);
+  stash_unnamed := "do_test"(d_3, t_2, v_t);
+  stash_unnamed := "do_test"(d_3, t_3, v_f);
+  stash_unnamed := "do_test"(d_3, t_4, v_f);
+  stash_unnamed := "do_test"(d_3, t_5, v_f);
+  stash_unnamed := "do_test"(d_3, t_6, v_f);
+  stash_unnamed := "do_test"(d_3, t_7, v_f);
+  stash_unnamed := "do_test"(d_3, t_8, v_f);
+  stash_unnamed := "do_test"(d_3, t_9, v_f);
+  stash_unnamed := "do_test"(d_3, t_all, v_t);
+  stash_unnamed := "do_test"(d_3, t_none, v_f);
+
+  (* Test negative normal *)
+  d_4 := {{"i-64", 0x8200400000000000v64}};
+  stash_unnamed := "do_test"(d_4, t_0, v_f);
+  stash_unnamed := "do_test"(d_4, t_1, v_f);
+  stash_unnamed := "do_test"(d_4, t_2, v_f);
+  stash_unnamed := "do_test"(d_4, t_3, v_t);
+  stash_unnamed := "do_test"(d_4, t_4, v_f);
+  stash_unnamed := "do_test"(d_4, t_5, v_f);
+  stash_unnamed := "do_test"(d_4, t_6, v_f);
+  stash_unnamed := "do_test"(d_4, t_7, v_f);
+  stash_unnamed := "do_test"(d_4, t_8, v_f);
+  stash_unnamed := "do_test"(d_4, t_9, v_f);
+  stash_unnamed := "do_test"(d_4, t_all, v_t);
+  stash_unnamed := "do_test"(d_4, t_none, v_f);
+
+  (* Test negative subnormal *)
+  d_5 := {{"i-64", 0x8000400000000000v64}};
+  stash_unnamed := "do_test"(d_5, t_0, v_f);
+  stash_unnamed := "do_test"(d_5, t_1, v_f);
+  stash_unnamed := "do_test"(d_5, t_2, v_f);
+  stash_unnamed := "do_test"(d_5, t_3, v_f);
+  stash_unnamed := "do_test"(d_5, t_4, v_t);
+  stash_unnamed := "do_test"(d_5, t_5, v_f);
+  stash_unnamed := "do_test"(d_5, t_6, v_f);
+  stash_unnamed := "do_test"(d_5, t_7, v_f);
+  stash_unnamed := "do_test"(d_5, t_8, v_f);
+  stash_unnamed := "do_test"(d_5, t_9, v_f);
+  stash_unnamed := "do_test"(d_5, t_all, v_t);
+  stash_unnamed := "do_test"(d_5, t_none, v_f);
+
+  (* Test negative zero *)
+  d_6 := {{"i-64", 0x8000000000000000v64}};
+  stash_unnamed := "do_test"(d_6, t_0, v_f);
+  stash_unnamed := "do_test"(d_6, t_1, v_f);
+  stash_unnamed := "do_test"(d_6, t_2, v_f);
+  stash_unnamed := "do_test"(d_6, t_3, v_f);
+  stash_unnamed := "do_test"(d_6, t_4, v_f);
+  stash_unnamed := "do_test"(d_6, t_5, v_t);
+  stash_unnamed := "do_test"(d_6, t_6, v_f);
+  stash_unnamed := "do_test"(d_6, t_7, v_f);
+  stash_unnamed := "do_test"(d_6, t_8, v_f);
+  stash_unnamed := "do_test"(d_6, t_9, v_f);
+  stash_unnamed := "do_test"(d_6, t_all, v_t);
+  stash_unnamed := "do_test"(d_6, t_none, v_f);
+
+  (* Test positive zero *)
+  d_7 := {{"i-64", 0x0000000000000000v64}};
+  stash_unnamed := "do_test"(d_7, t_0, v_f);
+  stash_unnamed := "do_test"(d_7, t_1, v_f);
+  stash_unnamed := "do_test"(d_7, t_2, v_f);
+  stash_unnamed := "do_test"(d_7, t_3, v_f);
+  stash_unnamed := "do_test"(d_7, t_4, v_f);
+  stash_unnamed := "do_test"(d_7, t_5, v_f);
+  stash_unnamed := "do_test"(d_7, t_6, v_t);
+  stash_unnamed := "do_test"(d_7, t_7, v_f);
+  stash_unnamed := "do_test"(d_7, t_8, v_f);
+  stash_unnamed := "do_test"(d_7, t_9, v_f);
+  stash_unnamed := "do_test"(d_7, t_all, v_t);
+  stash_unnamed := "do_test"(d_7, t_none, v_f);
+
+  (* Test positive subnormal *)
+  d_8 := {{"i-64", 0x0000400000000000v64}};
+  stash_unnamed := "do_test"(d_8, t_0, v_f);
+  stash_unnamed := "do_test"(d_8, t_1, v_f);
+  stash_unnamed := "do_test"(d_8, t_2, v_f);
+  stash_unnamed := "do_test"(d_8, t_3, v_f);
+  stash_unnamed := "do_test"(d_8, t_4, v_f);
+  stash_unnamed := "do_test"(d_8, t_5, v_f);
+  stash_unnamed := "do_test"(d_8, t_6, v_f);
+  stash_unnamed := "do_test"(d_8, t_7, v_t);
+  stash_unnamed := "do_test"(d_8, t_8, v_f);
+  stash_unnamed := "do_test"(d_8, t_9, v_f);
+  stash_unnamed := "do_test"(d_8, t_all, v_t);
+  stash_unnamed := "do_test"(d_8, t_none, v_f);
+
+  (* Test positive normal *)
+  d_9 := {{"i-64", 0x0200400000000000v64}};
+  stash_unnamed := "do_test"(d_9, t_0, v_f);
+  stash_unnamed := "do_test"(d_9, t_1, v_f);
+  stash_unnamed := "do_test"(d_9, t_2, v_f);
+  stash_unnamed := "do_test"(d_9, t_3, v_f);
+  stash_unnamed := "do_test"(d_9, t_4, v_f);
+  stash_unnamed := "do_test"(d_9, t_5, v_f);
+  stash_unnamed := "do_test"(d_9, t_6, v_f);
+  stash_unnamed := "do_test"(d_9, t_7, v_f);
+  stash_unnamed := "do_test"(d_9, t_8, v_t);
+  stash_unnamed := "do_test"(d_9, t_9, v_f);
+  stash_unnamed := "do_test"(d_9, t_all, v_t);
+  stash_unnamed := "do_test"(d_9, t_none, v_f);
+
+  (* Test positive infinity *)
+  d_10 := {{"i-64", 0x7FF0000000000000v64}};
+  stash_unnamed := "do_test"(d_10, t_0, v_f);
+  stash_unnamed := "do_test"(d_10, t_1, v_f);
+  stash_unnamed := "do_test"(d_10, t_2, v_f);
+  stash_unnamed := "do_test"(d_10, t_3, v_f);
+  stash_unnamed := "do_test"(d_10, t_4, v_f);
+  stash_unnamed := "do_test"(d_10, t_5, v_f);
+  stash_unnamed := "do_test"(d_10, t_6, v_f);
+  stash_unnamed := "do_test"(d_10, t_7, v_f);
+  stash_unnamed := "do_test"(d_10, t_8, v_f);
+  stash_unnamed := "do_test"(d_10, t_9, v_t);
+  stash_unnamed := "do_test"(d_10, t_all, v_t);
+  stash_unnamed := "do_test"(d_10, t_none, v_f);
+
+  ret := {{}};
+  return
+};

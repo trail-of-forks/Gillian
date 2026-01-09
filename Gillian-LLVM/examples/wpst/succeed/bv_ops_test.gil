@@ -42,6 +42,29 @@ proc main() {
   v_36 := {{"i-32",0x7890ABCDv32}};
   v_37 := {{"i-8", 0xF0v8}};
   v_38 := {{"i-8", 0x4v8}};
+  v_39 := {{"i-32", 0x7FFFFFFFv32}};
+  v_40 := {{"i-32", 0x7FFFFFFEv32}};
+  v_41 := {{"i-32",0x80000000v32}};
+  v_42 := {{"i-33",0x3v33}};
+  v_43 := {{"i-33",0xCv33}};
+  v_44 := {{"i-32",0x80000001v32}};
+  v_45 := {{"i-33",0x2v33}};
+  v_46 := {{"i-33",0x1FFFFFFFFv33}};
+  v_47 := {{"i-33",0xFFFFFFF6v33}};
+  v_48 := {{"i-33",0x10000000Bv33}};
+  v_49 := {{"i-33",0x100000002v33}};
+  v_50 := {{"i-33",0x100000000v33}};
+  v_51 := {{"i-33",0xFFFFFFF2v33}};
+  v_52 := {{"i-33",0x1FFFFFFF6v33}};
+  v_53 := {{"i-33",0x12v33}};
+  v_54 := {{"i-33",0xFFFFFFFCv33}};
+  v_55 := {{"i-33",0x0v33}};
+  v_56 := {{"i-33",0x1v33}};
+  v_57 := {{"i-33",0xDv33}};
+  v_58 := {{"i-8",0x0v8}};
+  v_59 := {{"i-8",0x8v8}};
+  v_60 := {{"i-8",0x3v8}};
+  v_61 := {{"i-8",0x6v8}};
 
   (* Test umin *)
   r_0 := "bvumin_32_32_32"(v_1, v_2);
@@ -246,6 +269,112 @@ proc main() {
   assert((r_74 == v_8));
   r_75 := "ctpop_8_8"(v_37);
   assert((r_75 == v_38));
+
+  (* Test saddsat *)
+  r_76 := "saddsat_32_32_32"(v_10, v_39);
+  assert((r_76 == v_39));
+  r_77 := "saddsat_32_32_32"(v_39, v_10);
+  assert((r_77 == v_39));
+  r_78 := "saddsat_32_32_32"(v_40, v_10);
+  assert((r_78 == v_39));
+  r_79 := "saddsat_32_32_32"(v_40, v_11);
+  assert((r_79 == v_40));
+  r_80 := "saddsat_32_32_32"(v_41, v_23);
+  assert((r_80 == v_41));
+  r_81 := "saddsat_32_32_32"(v_23, v_41);
+  assert((r_81 == v_41));
+
+  (* Test saddsat *)
+  r_82 := "ssubsat_32_32_32"(v_2, v_10);
+  assert((r_82 == v_2));
+  r_83 := "ssubsat_32_32_32"(v_2, v_11);
+  assert((r_83 == v_2));
+  r_84 := "ssubsat_32_32_32"(v_20, v_39);
+  assert((r_84 == v_2));
+  r_85 := "ssubsat_32_32_32"(v_22, v_21);
+  assert((r_85 == v_23));
+  r_86 := "ssubsat_32_32_32"(v_9, v_16);
+  assert((r_86 == v_16));
+  r_87 := "ssubsat_32_32_32"(v_11, v_2);
+  assert((r_87 == v_39));
+  r_88 := "ssubsat_32_32_32"(v_39, v_23);
+  assert((r_88 == v_39));
+
+  (* Test uadd_overflow *)
+  r_89 := "uadd_overflow_32_32_33"(v_2, v_44);
+  assert((r_89 == v_42));
+  r_90 := "uadd_overflow_32_32_33"(v_1, v_10);
+  assert((r_90 == v_43));
+
+  (* Test usub_overflow *)
+  r_91 := "usub_overflow_32_32_33"(v_9, v_1);
+  assert((r_91 == v_45));
+  r_92 := "usub_overflow_32_32_33"(v_1, v_9);
+  assert((r_92 == v_46));
+  r_93 := "usub_overflow_32_32_33"(v_2, v_1);
+  assert((r_93 == v_47));
+  r_94 := "usub_overflow_32_32_33"(v_1, v_2);
+  assert((r_94 == v_48));
+
+  (* Test sadd_overflow *)
+  r_95 := "sadd_overflow_32_32_33"(v_2, v_10);
+  assert((r_95 == v_49));
+  r_96 := "sadd_overflow_32_32_33"(v_2, v_11);
+  assert((r_96 == v_50));
+  r_97 := "sadd_overflow_32_32_33"(v_20, v_39);
+  assert((r_97 == v_51));
+  r_98 := "sadd_overflow_32_32_33"(v_22, v_21);
+  assert((r_98 == v_52));
+  r_99 := "sadd_overflow_32_32_33"(v_9, v_16);
+  assert((r_99 == v_53));
+  r_100 := "sadd_overflow_32_32_33"(v_11, v_2);
+  assert((r_100 == v_50));
+  r_101 := "sadd_overflow_32_32_33"(v_39, v_23);
+  assert((r_101 == v_54));
+
+  (* Test umul_overflow *)
+  r_102 := "umul_overflow_32_32_33"(v_15, v_11);
+  assert((r_102 == v_55));
+  r_103 := "umul_overflow_32_32_33"(v_2, v_18);
+  assert((r_103 == v_56));
+  r_104 := "umul_overflow_32_32_33"(v_18, v_2);
+  assert((r_104 == v_56));
+  r_105 := "umul_overflow_32_32_33"(v_16, v_16);
+  assert((r_105 == v_53));
+  r_106 := "umul_overflow_32_32_33"(v_21, v_22);
+  assert((r_106 == v_57));
+
+  (* Test smul_overflow *)
+  r_107 := "smul_overflow_32_32_33"(v_15, v_11);
+  assert((r_107 == v_55));
+  r_108 := "smul_overflow_32_32_33"(v_11, v_15);
+  assert((r_108 == v_55));
+  r_109 := "smul_overflow_32_32_33"(v_2, v_18);
+  assert((r_109 == v_56));
+  r_110 := "smul_overflow_32_32_33"(v_16, v_16);
+  assert((r_110 == v_53));
+  r_111 := "smul_overflow_32_32_33"(v_21, v_22);
+  assert((r_111 == v_43));
+
+  (* Test cttz *)
+  r_112 := "cttz_8_1_8"(v_7, v_f);
+  assert((r_112 == v_58));
+  r_113 := "cttz_8_1_8"(v_37, v_f);
+  assert((r_113 == v_38));
+  r_114 := "cttz_8_1_8"(v_58, v_f);
+  assert((r_114 == v_59));
+  r_115 := "cttz_8_1_8"(v_59, v_f);
+  assert((r_115 == v_60));
+
+  (* Test ctlz *)
+  r_116 := "ctlz_8_1_8"(v_7, v_f);
+  assert((r_116 == v_61));
+  r_117 := "ctlz_8_1_8"(v_37, v_f);
+  assert((r_117 == v_58));
+  r_118 := "ctlz_8_1_8"(v_58, v_f);
+  assert((r_118 == v_59));
+  r_119 := "ctlz_8_1_8"(v_59, v_f);
+  assert((r_119 == v_38));
 
   ret := {{}};
   return
